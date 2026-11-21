@@ -1,0 +1,373 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>REMISSION</title>
+<meta name="description" content="Dr. Adrian Hale made a cure for cancer. Then the patients died, and got back up. An open-world zombie horror shooter: an overrun city, a day and night cycle, five guns, and a gore slider.">
+<link rel="icon" href="icons/icon.svg">
+<meta name="theme-color" content="#0a0c0a">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta property="og:title" content="REMISSION">
+<meta property="og:description" content="Twelve patients. Twelve remissions. Then the city stopped dying.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Special+Elite&family=Libre+Franklin:ital,wght@0,300;0,500;0,800;1,300&display=swap">
+<style>
+:root { --ink: #e2e4dc; --dim: #8a8e84; --acc: #a8e05a; --blood: #c8160c; --line: rgba(226, 228, 220, .16);
+  --f-head: "Libre Franklin", Arial, sans-serif; --f-big: "Bebas Neue", Impact, sans-serif; --f-type: "Special Elite", "Courier New", monospace; color-scheme: dark; }
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { margin: 0; height: 100%; overflow: hidden; background: #000; color: var(--ink); font-family: var(--f-head); font-weight: 300; user-select: none; -webkit-user-select: none; }
+canvas#c { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+button { font: 500 17px var(--f-head); letter-spacing: .14em; text-transform: uppercase; color: var(--ink); background: transparent; border: 0; padding: 9px 16px; cursor: pointer; transition: .15s; }
+button:hover:not(:disabled), button:focus-visible { color: #fff; outline: none; text-shadow: 0 0 14px rgba(168, 224, 90, .8); }
+button:hover::before, button:focus-visible::before { content: '+ '; color: var(--acc); }
+button.link { text-transform: none; letter-spacing: 0; padding: 0; font: 16px var(--f-head); color: var(--acc); text-decoration: underline; }
+button.link::before { content: none !important; }
+button.big { border: 1px solid var(--line); padding: 14px 22px; }
+.screen { position: fixed; inset: 0; display: grid; place-items: center; padding: 24px 16px; overflow-y: auto; z-index: 20; background: radial-gradient(ellipse at 50% 60%, rgba(0, 0, 0, .2), rgba(0, 0, 0, .9) 72%); }
+.screen.solid { background: #000; }
+.card { width: min(600px, 100%); display: grid; gap: 10px; text-align: center; }
+h1 { font: 400 clamp(64px, 15vw, 168px)/0.85 var(--f-big); margin: 0; color: #f0f2ea; letter-spacing: .08em; text-shadow: 0 0 40px rgba(168, 224, 90, .25), 0 3px 0 #000; }
+h1 span { color: var(--acc); }
+h1 small { display: block; font: 300 14px var(--f-head); letter-spacing: .6em; color: var(--dim); text-shadow: none; margin-top: 10px; }
+.tag { font: italic 300 18px/1.5 var(--f-head); color: var(--dim); margin: 8px auto 16px; max-width: 32em; }
+.menu { display: grid; gap: 0; width: min(330px, 100%); margin: 0 auto; }
+.small { font: 14px/1.5 var(--f-head); color: var(--dim); }
+h2 { font: 400 46px var(--f-big); letter-spacing: .12em; margin: 0 0 6px; color: #f0f2ea; }
+.row { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+.warn p { font: 18px/1.6 var(--f-head); margin: 0 0 10px; }
+.keys { display: grid; grid-template-columns: auto 1fr; gap: 6px 18px; text-align: left; font-size: 17px; margin: 4px 0 10px; }
+.keys dt { font-family: var(--f-type); color: #fff; font-size: 15px; }
+.keys dd { margin: 0; }
+.settings { display: grid; gap: 12px; text-align: left; }
+.settings label { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; align-items: center; font-size: 17px; }
+.settings label output { font-family: var(--f-type); font-size: 14px; color: var(--dim); }
+.settings input[type=range] { grid-column: 1 / -1; accent-color: var(--acc); width: 100%; }
+.settings select { font: 15px var(--f-type); background: #111; color: var(--ink); border: 1px solid var(--line); padding: 4px 8px; }
+.settings .chk { grid-template-columns: auto 1fr; cursor: pointer; }
+.settings input[type=checkbox] { accent-color: var(--acc); width: 18px; height: 18px; }
+.gore { border: 1px solid rgba(200, 22, 12, .5); padding: 14px 16px; background: rgba(60, 0, 0, .25); text-align: left; }
+.gore label { display: grid; grid-template-columns: 1fr auto; gap: 6px 12px; font-size: 18px; font-weight: 500; }
+.gore output { font: 15px var(--f-type); color: #ff8a7a; }
+.gore input[type=range] { grid-column: 1 / -1; accent-color: var(--blood); width: 100%; height: 22px; }
+.gore p { margin: 8px 0 0; font-size: 14px; color: #c8b8b0; min-height: 2.6em; }
+.settings .gore label { font-size: 17px; }
+/* the intro and chapter cards */
+#card { background: #000; }
+#cardTime { font: 400 clamp(44px, 9vw, 96px)/1 var(--f-big); letter-spacing: .1em; color: #f0f2ea; animation: fadeup 1.2s; }
+#cardSub { font: italic 300 22px var(--f-head); color: var(--dim); letter-spacing: .06em; opacity: 0; animation: fadeup 1.2s .6s forwards; }
+/* death */
+#dead { background: radial-gradient(ellipse, #1a0300, #000 70%); }
+#deadTitle { font: 400 clamp(64px, 13vw, 140px)/1 var(--f-big); letter-spacing: .12em; color: var(--blood); text-shadow: 0 0 24px rgba(200, 20, 0, .6); margin: 4px 0; animation: shake .25s 2; }
+@keyframes shake { 0%, 100% { transform: none } 25% { transform: translate(-4px, 2px) } 75% { transform: translate(4px, -2px) } }
+#deadLine { font: italic 300 20px var(--f-head); color: var(--dim); }
+#deadLearn { font: 17px/1.5 var(--f-head); color: var(--ink); border-left: 2px solid var(--blood); text-align: left; padding: 6px 12px; margin: 10px auto; max-width: 30em; }
+/* endings */
+#ending .card { width: min(680px, 100%); }
+#endTitle { font: 400 84px var(--f-big); color: #f0f2ea; letter-spacing: .14em; }
+#endLines p { font: 300 21px/1.55 var(--f-head); margin: 0 0 14px; opacity: 0; animation: fadeup 2.2s forwards; }
+#endFoot { opacity: 0; animation: fadeup 2s forwards; }
+@keyframes fadeup { from { opacity: 0; transform: translateY(6px) } to { opacity: 1; transform: none } }
+#choice .card { width: min(720px, 100%); }
+#choice .row { gap: 18px; margin-top: 18px; }
+#choice button { width: 300px; text-transform: none; letter-spacing: .02em; font-size: 18px; line-height: 1.4; }
+#choice button b { display: block; font: 400 32px var(--f-big); letter-spacing: .1em; }
+/* notes */
+#note .card { width: min(620px, 100%); }
+.paper { background: #e4e0d4; color: #1e1c18; text-align: left; padding: 26px 30px; box-shadow: 0 10px 50px #000; transform: rotate(-0.5deg); font: 18px/1.55 var(--f-type); max-height: 70vh; overflow-y: auto; }
+.paper p { margin: 0 0 12px; }
+.paper .hand { font-style: italic; color: #4a4438; }
+.paper .small { color: #5a5448; font: italic 15px var(--f-head); }
+#noteTitle { font: italic 15px var(--f-head); color: var(--dim); letter-spacing: .12em; text-transform: uppercase; }
+#notesList { text-align: left; max-height: 60vh; overflow-y: auto; }
+#notesList p { margin: 0 0 10px; }
+/* HUD */
+#hud { position: fixed; inset: 0; pointer-events: none; z-index: 10; }
+#xhair { position: absolute; left: 50%; top: 50%; width: 22px; height: 22px; margin: -11px 0 0 -11px; transition: .12s; }
+#xhair::before, #xhair::after { content: ''; position: absolute; background: rgba(230, 235, 225, .7); box-shadow: 0 0 2px #000; }
+#xhair::before { left: 10px; top: 0; width: 2px; height: 22px; clip-path: polygon(0 0, 100% 0, 100% 35%, 0 35%, 0 65%, 100% 65%, 100% 100%, 0 100%); }
+#xhair::after { top: 10px; left: 0; height: 2px; width: 22px; clip-path: polygon(0 0, 35% 0, 35% 100%, 0 100%, 0 0, 65% 0, 100% 0, 100% 100%, 65% 100%); }
+#xhair.aim { transform: scale(.55); opacity: .6; }
+#xhair.on::before, #xhair.on::after { background: var(--acc); }
+#hitmark { position: absolute; left: 50%; top: 50%; width: 26px; height: 26px; margin: -13px 0 0 -13px; opacity: 0; background: linear-gradient(45deg, transparent 46%, #fff 46% 54%, transparent 54%), linear-gradient(-45deg, transparent 46%, #fff 46% 54%, transparent 54%); -webkit-mask: radial-gradient(circle, transparent 5px, #000 6px); mask: radial-gradient(circle, transparent 5px, #000 6px); }
+#hitmark.on { opacity: 1; }
+#hitmark.head { filter: drop-shadow(0 0 3px #ffd040) sepia(1) saturate(6) hue-rotate(-10deg); }
+#hitmark.kill { filter: sepia(1) saturate(9) hue-rotate(-40deg); transform: scale(1.3); }
+#prompt { position: absolute; left: 0; right: 0; top: calc(50% + 30px); text-align: center; font: 500 17px var(--f-head); text-shadow: 0 1px 4px #000, 0 0 10px #000; }
+#prompt b { font: 13px var(--f-type); border: 1px solid rgba(226, 228, 220, .55); padding: 1px 6px; margin-right: 8px; }
+#sub { position: absolute; left: 50%; bottom: 17%; transform: translateX(-50%); max-width: min(800px, 90vw); text-align: center; font: 400 21px/1.45 var(--f-head); color: #f4f4ee; text-shadow: 0 1px 3px #000, 0 0 14px #000; opacity: 0; transition: opacity .4s; }
+#sub.on { opacity: 1; }
+#sub.think { font-style: italic; color: #d8dcd0; }
+#sub b { font-weight: 800; color: #fff; }
+#sub.radio { font-family: var(--f-type); color: #c8f0a0; }
+#sub.ghost { color: #d0d8ff; font-style: italic; letter-spacing: .04em; }
+#toast { position: absolute; left: 50%; top: 15%; transform: translateX(-50%); font: 400 30px var(--f-big); letter-spacing: .2em; color: #fff; opacity: 0; transition: opacity .4s; text-shadow: 0 0 10px #000; white-space: nowrap; }
+#toast.on { opacity: .92; }
+#hint { position: absolute; left: 50%; top: 22%; transform: translateX(-50%); font: 15px var(--f-type); color: #c8ccc0; opacity: 0; transition: opacity .6s; text-align: center; max-width: 90vw; text-shadow: 0 0 6px #000; }
+#hint.on { opacity: .95; }
+#chapter { position: absolute; left: 0; right: 0; top: 34%; text-align: center; font: 400 clamp(40px, 7vw, 80px) var(--f-big); letter-spacing: .22em; color: #f0f2ea; text-shadow: 0 0 30px #000, 0 2px 0 #000; opacity: 0; transition: opacity 1.2s; }
+#chapter.on { opacity: 1; }
+#obj { position: absolute; left: 26px; top: 22px; max-width: 380px; opacity: 0; transition: opacity .8s; text-shadow: 0 1px 4px #000, 0 0 8px #000; }
+#obj.on { opacity: 1; }
+#objMain { font: 400 30px var(--f-big); color: var(--acc); letter-spacing: .1em; margin: 4px 0; }
+#objSub { font: 15px/1.45 var(--f-head); color: #cfd2c8; }
+#objSub div::before { content: '— '; color: var(--dim); }
+#compass { position: absolute; left: 50%; top: 14px; transform: translateX(-50%); width: min(440px, 60vw); height: 30px; border-bottom: 1px solid rgba(226, 228, 220, .25); overflow: hidden; font: 12px var(--f-type); color: #c8ccc0; text-shadow: 0 0 4px #000; -webkit-mask: linear-gradient(90deg, transparent, #000 15%, #000 85%, transparent); mask: linear-gradient(90deg, transparent, #000 15%, #000 85%, transparent); }
+#compass span { position: absolute; top: 6px; transform: translateX(-50%); }
+#compass span.big { font: 400 20px var(--f-big); top: 2px; color: #fff; }
+#compass em { position: absolute; top: 0; transform: translateX(-50%); color: #ffd040; font-style: normal; font-size: 16px; text-align: center; line-height: 1; }
+#compass em small { display: block; font-size: 10px; color: #e8d8a0; }
+#bl { position: absolute; left: 26px; bottom: 24px; width: 230px; text-shadow: 0 1px 3px #000; }
+#hpBar { height: 8px; background: rgba(255, 255, 255, .12); border: 1px solid rgba(255, 255, 255, .2); }
+#hpFill { height: 100%; width: 100%; background: linear-gradient(90deg, #6aa83a, var(--acc)); transition: width .2s; }
+#hpFill.low { background: var(--blood); animation: pulse 0.8s infinite; }
+@keyframes pulse { 50% { opacity: .55 } }
+#blRow { display: flex; justify-content: space-between; margin-top: 6px; font: 15px var(--f-type); color: #d8dcd0; }
+#meds { color: #ff8a8a; }
+#saved { color: var(--acc); opacity: 0; }
+#saved.on { animation: saved 3s; }
+@keyframes saved { 10%, 70% { opacity: .9 } 100% { opacity: 0 } }
+#br { position: absolute; right: 26px; bottom: 22px; text-align: right; text-shadow: 0 1px 3px #000, 0 0 10px #000; }
+#ammo { font: 400 52px/1 var(--f-big); color: #fff; letter-spacing: .04em; }
+#ammo span { font-size: 26px; color: var(--dim); margin-left: 6px; }
+#gunName { font: 13px var(--f-type); color: #c8ccc0; letter-spacing: .08em; text-transform: uppercase; }
+#slots { margin-top: 6px; display: flex; gap: 4px; justify-content: flex-end; }
+#slots i { font: 12px var(--f-type); font-style: normal; width: 20px; height: 20px; display: grid; place-items: center; border: 1px solid rgba(255, 255, 255, .12); color: rgba(255, 255, 255, .2); }
+#slots i.own { color: #c8ccc0; border-color: rgba(255, 255, 255, .35); }
+#slots i.cur { color: #000; background: var(--acc); border-color: var(--acc); }
+#reloadTip { position: absolute; left: 50%; top: calc(50% + 60px); transform: translateX(-50%); font: 14px var(--f-type); color: #ff8a7a; opacity: 0; }
+#reloadTip.on { opacity: .9; }
+#scope { position: fixed; inset: 0; pointer-events: none; z-index: 9; display: none; background: radial-gradient(circle at 50% 50%, transparent 0 calc(min(40vw, 40vh) - 2px), #000 calc(min(40vw, 40vh))); }
+#scope.on { display: block; }
+#scope::before, #scope::after { content: ''; position: absolute; background: rgba(0, 0, 0, .85); }
+#scope::before { left: 50%; top: 10%; bottom: 10%; width: 1.5px; }
+#scope::after { top: 50%; left: 10%; right: 10%; height: 1.5px; }
+#bloodFX { position: fixed; inset: 0; pointer-events: none; z-index: 8; opacity: 0; transition: opacity .4s; background: radial-gradient(circle at 28% 40%, rgba(110, 0, 0, .85) 0 7%, transparent 8%), radial-gradient(circle at 66% 30%, rgba(90, 0, 0, .8) 0 10%, transparent 11%), radial-gradient(circle at 72% 72%, rgba(120, 4, 0, .85) 0 5%, transparent 6%), radial-gradient(circle at 18% 80%, rgba(80, 0, 0, .85) 0 12%, transparent 13%), radial-gradient(ellipse at 50% 50%, transparent 35%, rgba(70, 0, 0, .9) 85%); }
+#bloodFX.on { opacity: 1; transition: opacity .05s; }
+/* the map */
+#map { position: fixed; inset: 0; z-index: 15; display: grid; place-items: center; background: rgba(0, 0, 0, .75); }
+#map .card { width: min(92vh, 92vw, 760px); }
+#mapC { width: 100%; aspect-ratio: 1; image-rendering: auto; border: 1px solid var(--line); }
+#mapObj { font: 15px var(--f-type); color: #ffd040; }
+/* touch */
+#touch { position: fixed; inset: 0; z-index: 9; display: none; }
+#touch.on { display: block; }
+#tZone { position: absolute; inset: 0; }
+#tStick { position: absolute; width: 110px; height: 110px; margin: -55px 0 0 -55px; border-radius: 50%; border: 1px solid rgba(255, 255, 255, .15); display: none; }
+#tStick.on { display: block; }
+#tKnob { position: absolute; left: 35px; top: 35px; width: 40px; height: 40px; border-radius: 50%; background: rgba(255, 255, 255, .15); }
+.tb { position: absolute; width: 60px; height: 60px; border-radius: 50%; border: 1px solid rgba(226, 228, 220, .3); background: rgba(0, 0, 0, .3); color: var(--ink); font: 10px var(--f-type); display: grid; place-items: center; }
+.tb.on { background: rgba(168, 224, 90, .35); }
+.tb.fire { width: 86px; height: 86px; font-size: 13px; border-color: rgba(200, 22, 12, .6); }
+body[data-input="touch"] #br { right: auto; left: 50%; transform: translateX(-50%); bottom: 6px; text-align: center; }
+body[data-input="touch"] #br #ammo { font-size: 30px; }
+body[data-input="touch"] #slots { justify-content: center; }
+body[data-input="touch"] #bl { width: 150px; }
+body:not([data-input="touch"]) .only-touch, body:not([data-input="pad"]) .only-pad, body:not([data-input="keys"]) .only-keys { display: none; }
+@media (max-width: 700px) { #obj { left: 14px; top: 46px; max-width: 70vw } #objMain { font-size: 22px } #sub { font-size: 17px; bottom: 30% } #bl { left: 14px; bottom: 14px; width: 150px } #ammo { font-size: 38px } }
+</style>
+<script type="importmap">
+{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js", "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/" } }
+</script>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="bloodFX"></div>
+<div id="scope"></div>
+
+<div id="hud" hidden>
+  <div id="compass"></div>
+  <div id="xhair"></div>
+  <div id="hitmark"></div>
+  <div id="prompt"></div>
+  <div id="reloadTip">OUT OF AMMO · SWITCH GUNS OR USE THE KNIFE</div>
+  <div id="sub"></div>
+  <div id="toast"></div>
+  <div id="hint"></div>
+  <div id="chapter"></div>
+  <div id="obj"><div id="objMain"></div><div id="objSub"></div></div>
+  <div id="bl"><div id="hpBar"><div id="hpFill"></div></div><div id="blRow"><span id="meds"></span><span id="saved">saved</span><span id="clock"></span></div></div>
+  <div id="br"><div id="ammo"></div><div id="gunName"></div><div id="slots"></div></div>
+</div>
+
+<div id="map" hidden>
+  <div class="card">
+    <canvas id="mapC" width="760" height="760"></canvas>
+    <div id="mapObj"></div>
+    <div class="row"><button id="mapClose">Close map (M)</button></div>
+  </div>
+</div>
+
+<div id="touch">
+  <div id="tZone"></div>
+  <div id="tStick"><div id="tKnob"></div></div>
+  <div class="tb fire" data-t="fire" style="right:30px;bottom:110px">FIRE</div>
+  <div class="tb" data-t="aim" style="right:128px;bottom:150px">AIM</div>
+  <div class="tb" data-t="reload" style="right:130px;bottom:70px">RELOAD</div>
+  <div class="tb" data-t="jump" style="right:30px;bottom:24px;width:52px;height:52px">JUMP</div>
+  <div class="tb" data-t="use" style="right:200px;bottom:30px">USE</div>
+  <div class="tb" data-t="knife" style="right:200px;bottom:110px">KNIFE</div>
+  <div class="tb" data-t="swap" style="right:130px;bottom:230px">SWAP</div>
+  <div class="tb" data-t="run" style="left:24px;bottom:150px;width:52px;height:52px">RUN</div>
+  <div class="tb" data-t="light" style="right:150px;top:20px;width:48px;height:48px">LIGHT</div>
+  <div class="tb" data-t="heal" style="right:206px;top:20px;width:48px;height:48px">MED</div>
+  <div class="tb" data-t="map" style="right:84px;top:20px;width:48px;height:48px">MAP</div>
+  <div class="tb" data-t="pause" style="right:20px;top:20px;width:48px;height:48px">II</div>
+</div>
+
+<div id="warn" class="screen solid" hidden>
+  <div class="card warn">
+    <h2>Before you go in</h2>
+    <p>This is a horror game. It has jump scares, the dead, a dead child, and violence. How much of the violence you see is up to you.</p>
+    <div class="gore">
+      <label>Gore <output></output><input type="range" data-set="gore" min="0" max="100" step="5"></label>
+      <p id="goreDesc2"></p>
+    </div>
+    <p class="small">You can change this any time in Settings. Play it with headphones: the night is mostly sound.</p>
+    <div class="row"><button id="warnOk" class="big">Go in</button></div>
+  </div>
+</div>
+
+<div id="title" class="screen" hidden>
+  <div class="card">
+    <h1>REMI<span>S</span>SION<small>A CURE FOR EVERYTHING</small></h1>
+    <p class="tag">You made a cure for cancer. Twelve patients, twelve remissions.<br>Then they stopped dying. All of them. All of us.</p>
+    <div class="menu">
+      <button id="btnContinue" hidden>Continue</button>
+      <button id="btnNew">New game</button>
+      <button id="btnHow">How to play</button>
+      <button id="btnSettings">Settings</button>
+      <button id="syncBtn" title="Keep your progress on all your devices">Sync</button>
+      <button id="installApp" style="display:none">Install as an app</button>
+      <button id="pcDownload" title="The Game Library app for Windows: every game in one place">Download for PC</button>
+    </div>
+    <p class="small" id="titleProg"></p>
+    <p class="small only-keys">Mouse and keyboard · controllers work too · headphones</p>
+    <p class="small only-pad">Controller connected</p>
+    <p class="small only-touch">Touch controls · play it sideways · headphones</p>
+  </div>
+</div>
+
+<div id="how" class="screen" hidden>
+  <div class="card">
+    <h2>How to stay alive</h2>
+    <dl class="keys only-keys">
+      <dt>WASD · Mouse</dt><dd>Move, look · Shift to run · Space to jump</dd>
+      <dt>Left click</dt><dd>Fire</dd>
+      <dt>Right click</dt><dd>Aim (the sniper's scope)</dd>
+      <dt>R</dt><dd>Reload</dd>
+      <dt>1 - 5 · Q · wheel</dt><dd>Pistol · SMG · rifle · sniper · heavy</dd>
+      <dt>V · middle click</dt><dd>Knife: shoves them back</dd>
+      <dt>E</dt><dd>Use, pick up, read</dd>
+      <dt>F</dt><dd>Flashlight (they see it at night)</dd>
+      <dt>H</dt><dd>Medkit</dd>
+      <dt>M</dt><dd>Map</dd>
+    </dl>
+    <dl class="keys only-pad">
+      <dt>Sticks</dt><dd>Move, look · L3 run</dd>
+      <dt>RT / LT</dt><dd>Fire / aim</dd>
+      <dt>X</dt><dd>Reload</dd>
+      <dt>Y · D-pad ←→</dt><dd>Switch gun</dd>
+      <dt>B / R3</dt><dd>Knife</dd>
+      <dt>A</dt><dd>Use · jump</dd>
+      <dt>LB</dt><dd>Flashlight</dd>
+      <dt>RB · D-pad ↑</dt><dd>Medkit</dd>
+      <dt>View · D-pad ↓</dt><dd>Map</dd>
+    </dl>
+    <p class="small" style="text-align:left">Only head shots put them down fast. By day they walk. At night the fast ones come out, and they hunt by sight: your flashlight shows them where you are. Gunfire carries for blocks.</p>
+    <p class="small" style="text-align:left">The yellow diamond on the compass is where you're going. Supplies (ammo, medkits) are in shops, car parks and on the dead, and the city restocks over time.</p>
+    <div class="row"><button data-back>Back</button></div>
+  </div>
+</div>
+
+<div id="settings" class="screen" hidden>
+  <div class="card">
+    <h2>Settings</h2>
+    <div class="settings">
+      <div class="gore"><label>Gore <output></output><input type="range" id="sGore" min="0" max="100" step="5"></label><p id="goreDesc"></p></div>
+      <label>Volume <output></output><input type="range" id="sVol" min="0" max="1" step="0.05"></label>
+      <label>Brightness <output></output><input type="range" id="sBright" min="0.7" max="1.8" step="0.05"></label>
+      <label>Look sensitivity <output></output><input type="range" id="sSens" min="0.3" max="2.5" step="0.05"></label>
+      <label>Field of view <output></output><input type="range" id="sFov" min="60" max="100" step="1"></label>
+      <label>Graphics <select id="sQuality"><option value="low">Low (fastest)</option><option value="medium">Medium</option><option value="high">High</option></select></label>
+      <label class="chk"><input type="checkbox" id="sVoices"> Spoken voices (text to speech)</label>
+      <label class="chk"><input type="checkbox" id="sSubs"> Subtitles</label>
+      <label class="chk"><input type="checkbox" id="sHit"> Hit markers</label>
+      <label class="chk"><input type="checkbox" id="sInvert"> Invert look up / down</label>
+      <label class="chk"><input type="checkbox" id="sPads"> Controllers ON</label>
+      <label class="chk"><input type="checkbox" id="sRumble"> Controller rumble</label>
+    </div>
+    <div class="row"><button data-back>Back</button></div>
+  </div>
+</div>
+
+<div id="pause" class="screen" hidden>
+  <div class="card">
+    <h2>Paused</h2>
+    <div class="menu">
+      <button id="btnResume">Resume</button>
+      <button id="btnNotes">Notes and tapes</button>
+      <button id="btnPauseSettings">Settings</button>
+      <button id="btnQuit">Quit to title</button>
+    </div>
+    <p class="small">The game saves at every checkpoint.</p>
+  </div>
+</div>
+
+<div id="notes" class="screen" hidden>
+  <div class="card">
+    <h2>Notes and tapes</h2>
+    <div id="notesList"></div>
+    <p class="small" id="notesCount"></p>
+    <div class="row"><button data-back>Back</button></div>
+  </div>
+</div>
+
+<div id="note" class="screen" hidden>
+  <div class="card">
+    <div id="noteTitle"></div>
+    <div class="paper" id="noteBody"></div>
+    <div class="row"><button id="noteClose">Put it down</button></div>
+  </div>
+</div>
+
+<div id="card" class="screen solid" hidden>
+  <div class="card"><div id="cardTime"></div><div id="cardSub"></div><p class="small" style="margin-top:30px">click to continue</p></div>
+</div>
+
+<div id="choice" class="screen solid" hidden>
+  <div class="card">
+    <h2>One dose</h2>
+    <p class="tag">Ines holds it up to the glass. It's the colour of weak tea.</p>
+    <div class="row">
+      <button id="btnGive"><b>Give it to Ines</b>Let her grow the cure from it. You won't be here to see it.</button>
+      <button id="btnTake"><b>Take it yourself</b>Live. There won't be any more.</button>
+    </div>
+  </div>
+</div>
+
+<div id="dead" class="screen" hidden>
+  <div class="card">
+    <div id="deadTitle"></div>
+    <p id="deadLine"></p>
+    <p id="deadLearn"></p>
+    <div class="menu"><button id="btnRetry">Last checkpoint</button><button id="btnDeadTitle">Title</button></div>
+    <p class="small" id="deadCount"></p>
+  </div>
+</div>
+
+<div id="ending" class="screen solid" hidden>
+  <div class="card">
+    <div id="endTitle"></div>
+    <div id="endLines"></div>
+    <div id="endFoot"><p class="small" id="endWhich"></p><div class="row"><button id="btnEndTitle">Title</button></div></div>
+  </div>
+</div>
+
+<script src="sync.js"></script>
+<script type="module" src="js/main.js"></script>
+<script src="install.js"></script>
+</body>
+</html>
