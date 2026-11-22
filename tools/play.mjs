@@ -40,7 +40,7 @@ async function shootTest(gun, part = 'head') {
   const aim = `const P = __s.P, zb = window.__zb; if (zb.state !== 'dead') { P.yaw = Math.atan2(-(zb.x - P.x), -(zb.z - P.z)); const eye = P.y + 1.62, aimY = zb.y + ${part === 'head' ? 1.86 : 1.3} * zb.scale; P.pitch = Math.atan2(aimY - eye, Math.hypot(zb.x - P.x, zb.z - P.z)); }`;
   await ev(`__s.mouse(2, true)`); await sleep(600); await ev(aim);
   await ev(`__s.mouse(0, true)`);
-  for (let i = 0; i < (gun === 'minigun' ? 14 : 7); i++) { await ev(aim); await sleep(180); }
+  for (let i = 0; i < (gun === 'minigun' ? 18 : 12); i++) { await ev(aim); await sleep(180); }
   await ev(`__s.mouse(0, false)`);
   await sleep(gun === 'sniper' ? 1500 : 200);
   if (gun === 'pistol' || gun === 'sniper') for (let i = 0; i < 6 && !(await ev('return window.__zb.state === "dead"')); i++) { await ev(aim); await ev(`__s.mouse(0, true)`); await sleep(120); await ev(`__s.mouse(0, false)`); await sleep(gun === 'sniper' ? 1400 : 250); }

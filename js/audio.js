@@ -238,14 +238,14 @@ const GUN = {
   sniper: { crack: 1500, body: 60, vol: 0.95, tail: 1.2, len: 0.25 },
   minigun: { crack: 2800, body: 110, vol: 0.32, tail: 0.3, len: 0.06 },
 };
-export function gunshot(kind, indoors = 0) {
-  if (!ctx) return; const t = now(), G = GUN[kind] || GUN.pistol;
-  const n = noise(), hp = filt('bandpass', G.crack * (0.9 + Math.random() * 0.2), 0.7), g = out(null, 0, 0.15 + indoors * 0.5);
+export function gunshot(kind, indoors = 0, pos = null) {
+  if (!ctx) return; const t = now(), G0 = GUN[kind] || GUN.pistol, G = pos ? { ...G0, vol: Math.min(1, G0.vol * 2.5) } : G0;
+  const n = noise(), hp = filt('bandpass', G.crack * (0.9 + Math.random() * 0.2), 0.7), g = out(pos, 0, 0.15 + indoors * 0.5);
   n.connect(hp).connect(g); env(g, t, 0.001, G.vol, G.len); n.start(t, Math.random()); n.stop(t + G.len + 0.05);
   const o = ctx.createOscillator(); o.type = 'triangle'; o.frequency.setValueAtTime(G.body * 2, t); o.frequency.exponentialRampToValueAtTime(G.body * 0.5, t + 0.12);
-  const og = out(null, 0, 0.2); o.connect(og); env(og, t, 0.001, G.vol * 0.9, 0.14); o.start(t); o.stop(t + 0.2);
+  const og = out(pos, 0, 0.2); o.connect(og); env(og, t, 0.001, G.vol * 0.9, 0.14); o.start(t); o.stop(t + 0.2);
   // the echo off the buildings
-  const e = noise(), lp = filt('lowpass', 900), eg = out(null, 0, 0.1); e.connect(lp).connect(eg);
+  const e = noise(), lp = filt('lowpass', 900), eg = out(pos, 0, 0.1); e.connect(lp).connect(eg);
   const d = 0.08 + Math.random() * 0.06; eg.gain.setValueAtTime(0.0001, t); eg.gain.exponentialRampToValueAtTime(G.vol * 0.25 * G.tail, t + d); eg.gain.exponentialRampToValueAtTime(0.0001, t + d + 0.3 + G.tail);
   e.start(t, Math.random()); e.stop(t + d + G.tail + 0.4);
 }
@@ -386,3 +386,7 @@ export function dog(pos, muffled = 0.4) {
     const bp = filt('bandpass', 900, 1.5), g = out(pos, muffled, 0.7); o.connect(bp).connect(g); env(g, tt, 0.005, 0.12, 0.13); o.start(tt); o.stop(tt + 0.16);
   }
 }
+
+// friends' voices go straight to the speakers (not through the game's compressor)
+let vbus = null;
+export function voiceBus() { if (!ctx) return null; if (!vbus) { vbus = ctx.createGain(); vbus.gain.value = 1; vbus.connect(ctx.destination); } return vbus; }

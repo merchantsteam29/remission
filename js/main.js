@@ -3,11 +3,12 @@ import * as THREE from 'three';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
-import { W, buildCity, buildSigns, collide, groundY, indoorAt, setDoor, drawMap, solid, raycast as worldRay, HALF } from './city.js';
+import { W, buildCity, buildSigns, collide, groundY, indoorAt, setDoor, drawMap, solid, clearLine, raycast as worldRay, HALF } from './city.js';
 import { createGore } from './gore.js';
 import { createZombies, makeRig } from './zombies.js';
 import { createWeapons, GUNS, ORDER } from './weapons.js';
 import { createMass } from './boss.js';
+import { createSurvival } from './survival.js';
 import { createStory, NOTES, ENDINGS, DEATHS } from './story.js';
 import * as TX from './tex.js';
 import * as A from './audio.js';
@@ -21,8 +22,8 @@ const COARSE = matchMedia('(pointer: coarse)').matches && !matchMedia('(pointer:
 const load = (k) => { try { return JSON.parse(localStorage.getItem(k)) || null; } catch { return null; } };
 const store = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* private mode */ } };
 const SKEY = 'remission.settings', PKEY = 'remission.progress', SAVE = 'remission.save';
-const settings = Object.assign({ vol: 0.8, voices: true, subs: true, sens: 1, invert: false, bright: 1, fov: 78, quality: COARSE ? 'low' : 'medium', gore: 60, pads: true, rumble: true, hitmarks: true }, load(SKEY) || {});
-const progress = Object.assign({ endings: {}, deaths: {}, total: 0, kills: 0, notes: {}, guns: {}, nights: 0, boss: 0 }, load(PKEY) || {});
+const settings = Object.assign({ vol: 0.8, voices: true, subs: true, sens: 1, invert: false, bright: 1, fov: 78, quality: COARSE ? 'low' : 'medium', gore: 60, pads: true, rumble: true, hitmarks: true, assist: true, autofire: true }, load(SKEY) || {});
+const progress = Object.assign({ endings: {}, deaths: {}, total: 0, kills: 0, notes: {}, guns: {}, nights: 0, boss: 0, survBest: 0, coop: 0 }, load(PKEY) || {});
 let save = load(SAVE);
 const goreK = () => Math.max(0, Math.min(1, settings.gore / 100));
 const goreName = (v) => v <= 0 ? 'Off' : v <= 30 ? 'Low' : v <= 60 ? 'Medium' : v <= 85 ? 'High' : 'Extreme';
@@ -106,8 +107,8 @@ function toLambert(on) {
 let lambertOn = false;
 function applyQuality() {
   const q = settings.quality, dpr = devicePixelRatio || 1;
-  basePR = q === 'low' ? Math.min(dpr, 1) * 0.75 : q === 'high' ? Math.min(dpr, 1.5) : Math.min(dpr, 1);
-  POOL_N = q === 'low' ? 3 : q === 'high' ? 8 : 6;
+  basePR = q === 'low' ? Math.min(dpr, 1) * (COARSE ? 0.6 : 0.75) : q === 'high' ? Math.min(dpr, 1.5) : Math.min(dpr, 1);
+  POOL_N = q === 'low' ? (COARSE ? 2 : 3) : q === 'high' ? 8 : 6;
   pool.forEach((l, i) => { if (i >= POOL_N) l.intensity = 0; });
   renderer.setPixelRatio(basePR * gov.scale); composer.setPixelRatio(basePR * gov.scale);
   sun.castShadow = q !== 'low'; flash.castShadow = q === 'high';
@@ -131,17 +132,19 @@ const decals = (() => {
 function applyGore() { const k = goreK(); decals.count = Math.round(W.decals.length * Math.min(1, k * 1.4)); decals.visible = k > 0; }
 
 // ---------- Dr. Hale ----------
-const P = { x: -3.2, z: 113.6, y: 0.15, yaw: Math.PI, pitch: 0, eye: 1.62, hp: 100, alive: true, stam: 1, vy: 0, airborne: false, sprinting: false, moving: 0, lit: false, indoors: false, medkits: 1, lookDir: new THREE.Vector3(), bob: 0, stepT: 0, healT: 0, hurtT: 0, lastHit: 0 };
+const P = { id: 'h', downed: false, dead: false, bleed: 0, shotN: 0, x: -3.2, z: 113.6, y: 0.15, yaw: Math.PI, pitch: 0, eye: 1.62, hp: 100, alive: true, stam: 1, vy: 0, airborne: false, sprinting: false, moving: 0, lit: false, indoors: false, medkits: 1, lookDir: new THREE.Vector3(), bob: 0, stepT: 0, healT: 0, hurtT: 0, lastHit: 0 };
 const input = new Input(canvas);
 input.pads = settings.pads; input.padSens = settings.sens; input.touchSens = settings.sens; input.rumbleOn = settings.rumble;
 voice.on = settings.voices; A.setVolume(settings.vol);
+let gameMode = 'story', holdT = 0, holdId = null;
 let mode = 'warn', fear = 0, shakeT = 0, shakeK = 0, focus = null, T = 0, hour = 7.5, nightK = 0, readFrom = null, deathKind = null, mapOpen = false, fovPunch = 0, flashlight = false;
 let boss = null;
 
 const zombies = createZombies(scene, gore, {
-  gore: goreK, player: () => P,
-  onAttack: (zb, dmg) => hurt(dmg, zb.kind === 'brute' ? 'growth' : nightK > 0.5 && zb.kind === 'runner' ? 'torn' : 'bitten', zb),
-  onKill: (zb, part) => { progress.kills++; kills++; drop(zb); if (part === 'head') headshots++; },
+  gore: goreK, player: () => P, players: () => (surv?.active() ? surv.players() : [P]),
+  onAttack: (zb, dmg, who) => { const k = zb.kind === 'brute' ? 'growth' : nightK > 0.5 && zb.kind === 'runner' ? 'torn' : 'bitten'; if (!who || who === P) hurt(dmg, k, zb); else surv.hurtRemote(who.id, dmg, k, zb); },
+  onKill: (zb, part, w) => { if (!w?.shooter || w.shooter === P.id) { progress.kills++; kills++; if (part === 'head') headshots++; } if (surv?.active()) surv.onKill(zb, w); else drop(zb); },
+  sendHit: (...a) => surv.sendHit(...a),
   gib: (at, dir, n) => { if (goreK() >= 0.5) gore.gib(at, dir, Math.round(n * goreK())); },
   wallSplat: (pt, dir, g) => { const h = worldRay(pt.x, pt.y, pt.z, dir.x, dir.y * 0.3, dir.z, 3); if (h && h.ny < 0.5 && Math.random() < g) gore.splat(new THREE.Vector3(h.x, h.y, h.z), 0.3 + Math.random() * 0.5 * g, new THREE.Vector3(h.nx, 0, h.nz)); },
   onSpot: () => { fear = Math.min(1, fear + 0.15); },
@@ -149,7 +152,8 @@ const zombies = createZombies(scene, gore, {
 let kills = 0, headshots = 0;
 const weapons = createWeapons({
   camera, world: scene, zombies, gore,
-  onNoise: (x, z, r) => zombies.noise(x, z, r),
+  onNoise: (x, z, r) => { if (surv?.active() && !surv.isHost()) surv.sendNoise(x, z, r); else zombies.noise(x, z, r); },
+  onShot: () => { P.shotN++; },
   onHitMarker: (head, dead) => hitMark(head, dead),
   extra: () => boss && !boss.S.dead ? [boss] : null,
 });
@@ -158,7 +162,7 @@ composer.addPass(fxPass);
 // Dr. Kaur, behind the glass in St. Agnes
 const kaur = makeRig('walker', 3, 'kaur', true); kaur.root.position.set(W.marks.kaur.x, 0.15, W.marks.kaur.z); kaur.root.rotation.y = Math.PI; scene.add(kaur.root);
 function kaurIdle() {
-  const d = Math.hypot(P.x - W.marks.kaur.x, P.z - W.marks.kaur.z); kaur.root.visible = d < 60; if (d > 25) return;
+  const d = Math.hypot(P.x - W.marks.kaur.x, P.z - W.marks.kaur.z); kaur.root.visible = d < 60 && gameMode === 'story'; if (d > 25) return;
   const want = Math.atan2(P.x - W.marks.kaur.x, P.z - W.marks.kaur.z); kaur.root.rotation.y += (want - kaur.root.rotation.y) * 0.05;
   kaur.armL.up.rotation.set(-0.5 + Math.sin(T * 0.8) * 0.05, 0, 0.5); kaur.armR.up.rotation.set(-0.5, 0, -0.5); kaur.armL.lo.rotation.x = -1.6; kaur.armR.lo.rotation.x = -1.6;
   kaur.neck.rotation.x = talkQ ? Math.sin(T * 9) * 0.04 : 0.05; kaur.hips.position.y = 0.95 + Math.sin(T * 1.3) * 0.005;
@@ -173,7 +177,7 @@ const ui = {
   toast(text) { const e = $('toast'); e.textContent = text; e.classList.add('on'); this.toastT = 3; },
   hint(text) { const e = $('hint'); e.textContent = text; e.classList.add('on'); this.hintT = 7; },
   objective(show = true) {
-    const o = story.objective(); $('objMain').textContent = o.main; $('objSub').innerHTML = o.sub.map((s) => `<div>${s}</div>`).join('');
+    const o = objective(); $('objMain').textContent = o.main; $('objSub').innerHTML = o.sub.map((s) => `<div>${s}</div>`).join('');
     if (show) { $('obj').classList.add('on'); this.objT = 6; }
   },
   chapter(text) { if (!text) return; $('chapter').textContent = text; $('chapter').classList.add('on'); this.chT = 4; },
@@ -215,7 +219,7 @@ function compass() {
     let rel = ((d - yawDeg + 540) % 360) - 180; if (Math.abs(rel) > 90) continue;
     html += `<span class="${n.length === 1 ? 'big' : ''}" style="left:${(w / 2 + rel / 90 * w / 2).toFixed(0)}px">${n}</span>`;
   }
-  const o = story.objective().at;
+  const o = objective().at;
   if (o) {
     const bearing = (Math.atan2(o.x - P.x, -(o.z - P.z)) * 180 / Math.PI + 360) % 360, rel = ((bearing - yawDeg + 540) % 360) - 180, d = Math.hypot(o.x - P.x, o.z - P.z);
     html += `<em style="left:${(w / 2 + Math.max(-1, Math.min(1, rel / 90)) * w / 2).toFixed(0)}px">◆<small>${Math.round(d)} m</small></em>`;
@@ -231,10 +235,10 @@ function openMap(on) {
   const c = $('mapC'), g = c.getContext('2d'), S = c.width / (HALF * 2), X = (v) => (v + HALF) * S;
   g.drawImage(mapBase, 0, 0, c.width, c.height);
   for (const p of pickups) if (!p.taken) { g.fillStyle = p.kind === 'med' ? '#e84a4a' : '#d8b040'; g.fillRect(X(p.x) - 2, X(p.z) - 2, 4, 4); }
-  const o = story.objective().at;
+  const o = objective().at;
   if (o) { g.fillStyle = '#ffd040'; g.beginPath(); g.arc(X(o.x), X(o.z), 7, 0, 7); g.fill(); g.strokeStyle = '#000'; g.lineWidth = 2; g.stroke(); }
   g.save(); g.translate(X(P.x), X(P.z)); g.rotate(-P.yaw); g.fillStyle = '#4ad8ff'; g.beginPath(); g.moveTo(0, -10); g.lineTo(7, 8); g.lineTo(0, 4); g.lineTo(-7, 8); g.fill(); g.restore();
-  $('mapObj').textContent = story.objective().main + ' — ' + story.objective().sub[0];
+  $('mapObj').textContent = objective().main + ' — ' + objective().sub[0];
 }
 
 // ---------- supplies ----------
@@ -242,20 +246,28 @@ const pickups = [];
 const pickMat = { ammo: new THREE.MeshStandardMaterial({ map: TX.metal('ammob', 0x4a5a32, 61, 0.2), roughness: 0.6 }), med: new THREE.MeshStandardMaterial({ map: TX.sign('✚', { w: 64, h: 64, bg: '#e8e8e8', fg: '#c81818', font: 'bold 50px Arial' }), roughness: 0.5 }) };
 const pickGeo = { ammo: new THREE.BoxGeometry(0.42, 0.24, 0.26), med: new THREE.BoxGeometry(0.34, 0.24, 0.12) };
 const glowTex = (() => { const c = document.createElement('canvas'); c.width = c.height = 64; const g = c.getContext('2d'); const gr = g.createRadialGradient(32, 32, 0, 32, 32, 32); gr.addColorStop(0, 'rgba(255,255,220,0.8)'); gr.addColorStop(1, 'rgba(255,255,220,0)'); g.fillStyle = gr; g.fillRect(0, 0, 64, 64); return new THREE.CanvasTexture(c); })();
-function addPickup(kind, x, z, y = null, temp = false) {
+const objective = () => (gameMode === 'survival' && surv.active() ? surv.objective() : story.objective());
+let pickN = 1;
+function addPickup(kind, x, z, y = null, temp = false, id = null) {
   const m = new THREE.Mesh(pickGeo[kind], pickMat[kind]); m.castShadow = true;
   const gy = y ?? groundY(x, z); m.position.set(x, gy + 0.3, z); scene.add(m);
   const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: kind === 'med' ? 0xff8080 : 0xffe0a0, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.6 })); s.scale.setScalar(0.9); m.add(s);
-  const p = { kind, x, z, m, taken: false, temp, t: Math.random() * 6 }; pickups.push(p); return p;
+  const p = { id: id ?? pickN++, kind, x, z, m, taken: false, temp, t: Math.random() * 6 }; pickups.push(p); return p;
 }
 function stockLoot(rnd = Math.random) {
   for (const p of [...pickups]) { scene.remove(p.m); } pickups.length = 0;
   W.loot.forEach((l, i) => { if (save?.lootTaken?.includes(i)) return; const r = rnd(); if (r < 0.18) return; const p = addPickup(r < 0.5 ? 'med' : 'ammo', l.x, l.z); p.spot = i; });
 }
+function removePickup(id) { const i = pickups.findIndex((p) => p.id === id); if (i < 0) return; scene.remove(pickups[i].m); pickups.splice(i, 1); }
 function take(p) {
-  p.taken = true; scene.remove(p.m); A.pickup();
-  if (p.spot !== undefined) { (save.lootTaken ||= []).push(p.spot); }
-  if (p.kind === 'med') { P.medkits = Math.min(5, P.medkits + 1); ui.toast('+1 MEDKIT'); return; }
+  if (gameMode === 'survival' && !surv.take(p)) return; // co-op: the host says who got it
+  p.taken = true; scene.remove(p.m);
+  if (p.spot !== undefined && save) { (save.lootTaken ||= []).push(p.spot); }
+  applyPickup(p.kind);
+}
+function applyPickup(kind) {
+  A.pickup();
+  if (kind === 'med') { P.medkits = Math.min(5, P.medkits + 1); ui.toast('+1 MEDKIT'); return; }
   const own = ORDER.filter((k) => weapons.S.owned[k]);
   if (!own.length) { P.medkits = Math.min(5, P.medkits + 1); ui.toast('+1 MEDKIT'); return; }
   // the gun you're lowest on, by how many magazines you have left
@@ -359,7 +371,7 @@ function horde(n, rf = 0.3) {
 // night: things in the dark (on a timer, never two close together)
 let creepT = 70;
 function nightEvents(dt) {
-  if (nightK < 0.6 || P.indoors || mode !== 'play' || talkQ || story.S.step < 2) { creepT = Math.max(creepT, 25); return; }
+  if (nightK < 0.6 || P.indoors || mode !== 'play' || talkQ || (gameMode === 'story' && story.S.step < 2)) { creepT = Math.max(creepT, 25); return; }
   if ((creepT -= dt) > 0) return;
   creepT = 55 + Math.random() * 60;
   const r = Math.random();
@@ -371,7 +383,7 @@ function nightEvents(dt) {
     const x = P.x + Math.sin(P.yaw) * 9, z = P.z + Math.cos(P.yaw) * 9;
     if (!solid(x, z)) { const zb = zombies.spawn('runner', x, z, { state: 'chase', scripted: true, sprint: 1 }); zb.heading = Math.atan2(P.x - x, P.z - z); A.whisper({ x: P.x + Math.sin(P.yaw) * 2, y: 1.6, z: P.z + Math.cos(P.yaw) * 2 }, 0, 1.0, 0.22); return; }
   }
-  if (r < 0.75 && story.S.step >= 6) { // him, down the street
+  if (r < 0.75 && (gameMode === 'story' ? story.S.step >= 6 : surv.R.night >= 2)) { // him, down the street
     const x = P.x - Math.sin(P.yaw) * 26, z = P.z - Math.cos(P.yaw) * 26;
     if (!solid(x, z) && !indoorAt(x, z)) { noah(x, z, { dur: 4, giggle: true }); return; }
   }
@@ -407,14 +419,14 @@ function closeNote() { only(null); mode = readFrom === 'paused' ? 'paused' : 'pl
 
 // ---------- getting hurt ----------
 function hurt(dmg, kind, zb) {
-  if (!P.alive || mode !== 'play') return;
+  if (!P.alive || P.downed || P.dead || !(mode === 'play' || (mode === 'paused' && surv.online()))) return;
   if (TEST && window.__god) dmg = 0;
   P.hp -= dmg; P.hurtT = 0.4; P.lastHit = 0; shakeT = 0.25; shakeK = 0.35;
   U.red.value = Math.min(1, U.red.value + dmg / 30);
   A.bite(P); input.rumble(0.9, 0.5, 200);
   if (zb && goreK() > 0.5 && Math.random() < goreK()) { $('bloodFX').classList.add('on'); setTimeout(() => $('bloodFX').classList.remove('on'), 400 + goreK() * 900); }
   if (zb) { const dx = P.x - zb.x, dz = P.z - zb.z, d = Math.hypot(dx, dz) || 1; P.x += dx / d * 0.35; P.z += dz / d * 0.35; }
-  if (P.hp <= 0) die(kind);
+  if (P.hp <= 0) { if (gameMode === 'survival') { P.hp = 0; surv.downLocal(kind); } else die(kind); }
 }
 function die(kind) {
   P.alive = false; P.hp = 0; deathKind = kind; mode = 'dying'; T = 0;
@@ -443,6 +455,8 @@ function resetWorld() {
   lightsOff.length = 0; talkQ = null; voice.cancel();
 }
 function startFrom(s) {
+  if (surv.active() || surv.net) surv.leave(false);
+  gameMode = 'story'; P.downed = false; P.dead = false; zombies.S.puppet = false;
   resetWorld();
   save = s ? JSON.parse(JSON.stringify(s)) : null;
   story.S.step = s ? s.step : 0; story.S.flags = s ? { ...s.flags } : {}; story.S.notes = s ? { ...s.notes } : {}; story.S.talked = s ? { ...s.talked } : {};
@@ -463,7 +477,7 @@ function startFrom(s) {
   mode = 'play'; only(null); setHud(true); input.lock(); A.initAudio();
   U.black.value = 1; fear = 0; U.red.value = 0;
   ui.objective(true);
-  if (!s) { ui.chapter(story.CH_TITLES[1]); setTimeout(() => g.say('HALE', 'My office. How long was I out? ... My arm.', 4), 1800); setTimeout(() => ui.hint(`WASD move · mouse look · ${keyName('use')} use · ${keyName('light')} flashlight · ${keyName('map')} map`), 5000); }
+  if (!s) { ui.chapter(story.CH_TITLES[1]); setTimeout(() => g.say('HALE', 'My office. How long was I out? ... My arm.', 4), 1800); setTimeout(() => ui.hint(input.touchMode ? 'Left thumb: move · drag on the right: look · tap USE (or the prompt) to use' : input.padMode ? 'Left stick: move · right stick: look · ' + keyName('use') + ' use · ' + keyName('light') + ' flashlight' : `WASD move · mouse look · ${keyName('use')} use · ${keyName('light')} flashlight · ${keyName('map')} map`), 5000); }
 }
 function newGame() { mode = 'intro'; only('card'); setHud(false); A.initAudio(); introT = 0; introI = 0; showIntro(); }
 let introT = 0, introI = 0;
@@ -492,7 +506,7 @@ const C_DUSK = { top: new THREE.Color(0x3a3448), hor: new THREE.Color(0xc0683a),
 const C_NIGHT = { top: new THREE.Color(0x05070c), hor: new THREE.Color(0x10141c), fog: new THREE.Color(0x07090e) };
 const _c1 = new THREE.Color(), _c2 = new THREE.Color(), _c3 = new THREE.Color(), _sd = new THREE.Vector3();
 function dayNight(dt) {
-  if (mode === 'play') hour = (hour + dt / 50) % 24; // a game hour is 50 seconds: a whole day in 20 minutes
+  if ((mode === 'play' || (mode === 'paused' && surv.online())) && !(surv.active() && !surv.isHost())) hour = (hour + dt / 50) % 24; // a game hour is 50 seconds: a whole day in 20 minutes
   const a = (hour - 6) / 24 * Math.PI * 2, elev = Math.sin(a);
   _sd.set(Math.cos(a) * 0.8, elev, 0.45).normalize();
   const dayK = THREE.MathUtils.smoothstep(elev, -0.12, 0.25), duskK = Math.max(0, 1 - Math.abs(elev - 0.02) / 0.22) * (1 - Math.abs(dayK - 0.5) * 0.4);
@@ -579,7 +593,9 @@ function frame(now) {
   U.fear.value += (fear - U.fear.value) * Math.min(1, dt * 3); fear = Math.max(0, fear - dt * 0.12);
   U.bright.value = settings.bright;
   U.sick.value = story.S.step >= 9 ? 0.4 : 0;
-  dayNight(mode === 'play' ? dt : 0);
+  // co-op doesn't stop when you open the menu
+  if (mode === 'paused' && surv.online()) { zombies.update(dt, ctxZ()); surv.update(dt); }
+  dayNight(mode === 'play' || (mode === 'paused' && surv.online()) ? dt : 0);
   updateLights(dt);
   gore.update(dt);
   ui.tick(dt);
@@ -592,9 +608,19 @@ function frame(now) {
   composer.render();
   const t2 = performance.now(); prof.upd += t1 - t0; prof.ren += t2 - t1; prof.n++; prof.calls += renderer.info.render.calls;
 }
-const ctxZ = () => ({ night: nightK, indoors: P.indoors, chapter: story.chapter(), far: camera.far * 0.8, max: settings.quality === 'low' ? 18 : settings.quality === 'high' ? 34 : 26 });
+const ctxZ = () => ({ night: nightK, indoors: P.indoors, chapter: story.chapter(), far: camera.far * 0.8, max: settings.quality === 'low' ? (COARSE ? 12 : 18) : settings.quality === 'high' ? 34 : 26 });
 
 function play(dt, pad) {
+  const surv_ = gameMode === 'survival';
+  // out of it (survival): watch through a friend's eyes until dawn
+  if (P.dead) {
+    const sp = surv.spectate();
+    if (sp) { camera.position.set(sp.x, sp.y + 1.62, sp.z); camera.rotation.set(sp.pitch, sp.yaw, 0); P.x += (sp.x - P.x) * 0.1; P.z += (sp.z - P.z) * 0.1; }
+    camera.getWorldDirection(P.lookDir); P.lookDir.y = 0; P.lookDir.normalize();
+    A.setListener(camera.position, P.lookDir);
+    zombies.update(dt, ctxZ()); surv.update(dt); updateApparitions(dt); updateHud();
+    $('prompt').innerHTML = ''; return;
+  }
   // look
   const sens = 0.0022 * settings.sens * (1 - weapons.S.aim * (1 - (weapons.S.cur ? GUNS[weapons.S.cur].fov : 1)) * 0.8);
   P.yaw -= input.dx * sens; P.pitch -= input.dy * sens * (settings.invert ? -1 : 1);
@@ -605,10 +631,10 @@ function play(dt, pad) {
   if (input.down('KeyA', 'ArrowLeft')) mx -= 1; if (input.down('KeyD', 'ArrowRight')) mx += 1;
   if (pad) { mx += pad.mx; mz += pad.mz; }
   const ml = Math.hypot(mx, mz); if (ml > 1) { mx /= ml; mz /= ml; }
-  const wantRun = (input.down('ShiftLeft', 'ShiftRight') || pad?.run) && mz > 0.3 && P.stam > 0.05 && weapons.S.aim < 0.3;
+  const wantRun = (input.down('ShiftLeft', 'ShiftRight') || pad?.run) && mz > 0.3 && P.stam > 0.05 && weapons.S.aim < 0.3 && !P.downed;
   P.sprinting = wantRun && ml > 0.2;
   const G = weapons.S.cur ? GUNS[weapons.S.cur] : null;
-  const speed = (P.sprinting ? 6.8 : 4.1) * (G?.moveMul || 1) * (1 - weapons.S.aim * 0.4) * (weapons.S.cur === 'minigun' && weapons.S.spin > 0.5 ? 0.8 : 1);
+  const speed = P.downed ? 0.7 : (P.sprinting ? 6.8 : 4.1) * (G?.moveMul || 1) * (1 - weapons.S.aim * 0.4) * (weapons.S.cur === 'minigun' && weapons.S.spin > 0.5 ? 0.8 : 1);
   P.stam = Math.max(0, Math.min(1, P.stam + (P.sprinting ? -dt / 6 : dt / 4)));
   const s = Math.sin(P.yaw), c = Math.cos(P.yaw);
   const vx = (-s * mz + c * mx) * speed, vz = (-c * mz - s * mx) * speed;
@@ -617,21 +643,22 @@ function play(dt, pad) {
   P.moving = Math.min(1, ml) * (P.sprinting ? 1.5 : 1);
   // jump
   const gy = groundY(P.x, P.z);
-  if ((input.hit('Space') || (pad?.jump && !focus)) && !P.airborne) { P.vy = 4.3; P.airborne = true; }
+  if ((input.hit('Space') || (pad?.jump && !focus)) && !P.airborne && !P.downed) { P.vy = 4.3; P.airborne = true; }
   if (P.airborne) { P.vy -= 13 * dt; P.y += P.vy * dt; if (P.y <= gy) { P.y = gy; P.airborne = false; P.vy = 0; A.step(P, 'concrete', 0.3); } }
   else P.y += (gy - P.y) * Math.min(1, dt * 15);
   // steps (and the dead hear them)
   if (ml > 0.2 && !P.airborne) {
     P.stepT -= dt * speed / 1.9;
-    if (P.stepT <= 0) { P.stepT = 1; A.step(P, P.indoors ? 'tile' : 'concrete', P.sprinting ? 0.32 : 0.16); if (P.sprinting) zombies.noise(P.x, P.z, 11); }
+    if (P.stepT <= 0) { P.stepT = 1; A.step(P, P.indoors ? 'tile' : 'concrete', P.sprinting ? 0.32 : 0.16); if (P.sprinting) weaponsNoise(P.x, P.z, 11); }
   }
   P.indoors = !!indoorAt(P.x, P.z);
   // camera
+  P.eye += ((P.downed ? 0.45 : 1.62) - P.eye) * Math.min(1, dt * 5);
   P.bob += dt * (ml > 0.2 ? (P.sprinting ? 13 : 9) : 0);
   const bob = ml > 0.2 && !P.airborne ? Math.sin(P.bob) * (P.sprinting ? 0.05 : 0.025) : 0;
   let shx = 0, shy = 0; if (shakeT > 0) { shakeT -= dt; shx = (Math.random() - 0.5) * shakeK * 0.08; shy = (Math.random() - 0.5) * shakeK * 0.08; }
   camera.position.set(P.x, P.y + P.eye + bob, P.z);
-  camera.rotation.set(P.pitch + weapons.S.kickPitch + shy, P.yaw + shx, Math.sin(P.bob * 0.5) * (P.sprinting ? 0.012 : 0));
+  camera.rotation.set(P.pitch + weapons.S.kickPitch + shy, P.yaw + shx, Math.sin(P.bob * 0.5) * (P.sprinting ? 0.012 : 0) + (P.downed ? 0.25 : 0));
   camera.getWorldDirection(P.lookDir); P.lookDir.y = 0; P.lookDir.normalize();
   fovPunch *= Math.max(0, 1 - dt * 5);
   const aimF = weapons.S.cur ? 1 - weapons.S.aim * (1 - GUNS[weapons.S.cur].fov) : 1;
@@ -649,48 +676,89 @@ function play(dt, pad) {
   };
   wheel = 0;
   if (!input.locked && !input.touchMode && !input.padMode && !TEST) { I.fire = false; I.fireHit = false; I.aim = false; }
+  // thumbs and sticks: a little help aiming, and (on touch) the gun fires itself when one is in the sights
+  if ((input.touchMode || input.padMode) && settings.assist && weapons.S.cur) assist(dt, I);
+  if (P.downed) { I.fire = I.fireHit = I.aim = I.reloadHit = I.knifeHit = false; I.swap = 0; I.slot = 0; }
   const rec = weapons.update(dt, I, P);
   P.pitch += rec.pitch; P.yaw += rec.yaw;
   if (weapons.S.firedThisFrame) { fear = Math.max(0, fear - 0.01); input.rumble(weapons.S.cur === 'sniper' ? 0.8 : 0.25, 0.3, 60); }
   // healing
-  if ((input.hit('KeyH') || pad?.heal) && P.medkits > 0 && P.hp < 100 && P.healT <= 0) { P.medkits--; P.healT = 1.2; A.heal(); ui.toast('MEDKIT'); }
+  if ((input.hit('KeyH') || pad?.heal) && P.medkits > 0 && P.hp < 100 && P.healT <= 0 && !P.downed) { P.medkits--; P.healT = 1.2; A.heal(); ui.toast('MEDKIT'); }
   if (P.healT > 0) { P.healT -= dt; P.hp = Math.min(100, P.hp + 45 / 1.2 * dt); }
-  P.lastHit += dt; if (P.lastHit > 6 && P.hp < 30) P.hp = Math.min(30, P.hp + dt * 2); // you get back to your feet, a bit
+  P.lastHit += dt; if (P.lastHit > 6 && P.hp < 30 && !P.downed) P.hp = Math.min(30, P.hp + dt * 2); // you get back to your feet, a bit
   // the map
   if (input.hit('KeyM') || pad?.map) openMap(!mapOpen);
   if (mapOpen && Math.random() < 0.1) openMap(true);
-  // what's in front of you
+  // what's in front of you (some things you hold the button for: picking a friend up)
   focusCheck();
   if (focus) {
     const lbl = typeof focus.label === 'function' ? focus.label() : focus.label;
-    $('prompt').innerHTML = `<b>${keyName('use')}</b>${lbl}`; $('xhair').classList.add('on');
-    if (input.hit('KeyE') || input.lmbHit && !weapons.S.cur || pad?.use) { const f = focus; focus = null; f.use(); }
-  } else { $('prompt').innerHTML = ''; $('xhair').classList.remove('on'); }
+    if (focus.hold) {
+      const held = input.down('KeyE') || !!pad?.useHeld || (input.touch.held.use);
+      if (holdId !== focus.id) { holdId = focus.id; holdT = 0; }
+      holdT = held ? holdT + dt : 0;
+      $('prompt').innerHTML = `<b>${keyName('use')}</b>${lbl}<i style="--p:${Math.min(1, holdT / focus.hold).toFixed(2)}"></i>`;
+      if (holdT >= focus.hold) { const f = focus; holdT = 0; f.use(); }
+    } else {
+      $('prompt').innerHTML = `<b>${keyName('use')}</b>${lbl}`;
+      if (input.hit('KeyE') || input.lmbHit && !weapons.S.cur || pad?.use || promptTap) { const f = focus; focus = null; f.use(); }
+    }
+    $('xhair').classList.add('on');
+  } else { $('prompt').innerHTML = ''; $('xhair').classList.remove('on'); holdT = 0; }
+  promptTap = false;
+  document.querySelector('[data-t="use"]')?.classList.toggle('ready', !!focus);
   if (talkQ && (input.hit('Enter') || pad?.b)) skipLine();
   // supplies under your feet
   for (const p of pickups) {
     if (p.taken) continue; p.t += dt; p.m.rotation.y += dt * 1.2; p.m.position.y = groundY(p.x, p.z) + 0.32 + Math.sin(p.t * 2) * 0.05;
-    if (Math.hypot(p.x - P.x, p.z - P.z) < 1.3) take(p);
+    if (Math.hypot(p.x - P.x, p.z - P.z) < 1.3 && !P.downed) take(p);
   }
   // the world
-  story.update(dt);
-  kaurIdle();
+  if (!surv_) { story.update(dt); kaurIdle(); }
+  else surv.update(dt);
   zombies.update(dt, ctxZ());
   if (boss) boss.update(dt);
   updateApparitions(dt);
   nightEvents(dt);
   // fear: from what's close
   let near = 0; for (const z of zombies.list) if (z.state === 'chase' || z.state === 'attack') { const d = Math.hypot(z.x - P.x, z.z - P.z); if (d < 14) near += (14 - d) / 14; }
-  fear = Math.min(1, Math.max(fear, near * 0.35));
+  fear = Math.min(1, Math.max(fear, near * 0.35, P.downed ? 0.8 : 0));
   A.ambience(dt, { night: nightK, fear: U.fear.value, indoors: P.indoors ? 1 : 0, nearFire: W.fires.reduce((m, f) => Math.max(m, 1 - Math.hypot(f.x - P.x, f.z - P.z) / 14), 0), listener: P });
   A.heartbeat(dt, 60 + U.fear.value * 70 + (P.hp < 40 ? 40 : 0), (P.hp < 40 ? 0.5 : 0) + U.fear.value * 0.3);
   updateHud();
+}
+const weaponsNoise = (x, z, r) => { if (surv.active() && !surv.isHost()) surv.sendNoise(x, z, r); else zombies.noise(x, z, r); };
+let promptTap = false;
+$('prompt').addEventListener('click', () => { promptTap = true; });
+$('prompt').addEventListener('touchstart', (e) => { e.preventDefault(); promptTap = true; }, { passive: false });
+// aim assist: the nearest head close to your sights pulls them a little towards it. Auto-fire (touch): when the
+// sights are on one and nothing is in the way, the trigger is pulled for you.
+const _ao = new THREE.Vector3(), _ad = new THREE.Vector3(), _ah = new THREE.Vector3();
+let autoT = 0;
+function assist(dt, I) {
+  camera.getWorldPosition(_ao); camera.getWorldDirection(_ad);
+  let best = null, bestA = (weapons.S.aim > 0.5 ? 9 : 6) * Math.PI / 180;
+  for (const zb of zombies.list) {
+    if (zb.state === 'dead' || zb.kind === 'child') continue;
+    const d = Math.hypot(zb.x - P.x, zb.z - P.z); if (d > 45 || d < 0.5) continue;
+    _ah.set(zb.x, zb.y + (zb.crawl ? 0.35 : 1.62) * zb.scale, zb.z).sub(_ao);
+    const ang = _ah.angleTo(_ad); if (ang < bestA) { bestA = ang; best = { yaw: Math.atan2(-_ah.x, -_ah.z), pitch: Math.atan2(_ah.y, Math.hypot(_ah.x, _ah.z)), d, zb }; }
+  }
+  if (!best) return;
+  const k = Math.min(1, dt * (weapons.S.aim > 0.5 ? 6 : 3.5));
+  let dy = best.yaw - P.yaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy));
+  P.yaw += dy * k; P.pitch += (best.pitch - P.pitch) * k;
+  if (input.touchMode && settings.autofire && bestA < 2.5 * Math.PI / 180 && clearLine(_ao.x, _ao.y, _ao.z, best.zb.x, best.zb.y + 1.2, best.zb.z)) {
+    const auto = GUNS[weapons.S.cur].auto;
+    I.fire = true; if (!auto && (autoT -= dt) <= 0) { I.fireHit = true; autoT = 0.28; }
+  }
 }
 let wheel = 0;
 addEventListener('wheel', (e) => { if (mode === 'play') wheel += e.deltaY > 0 ? 1 : -1; }, { passive: true });
 function focusCheck() {
   focus = null; let best = 2.4;
-  for (const it of story.I) {
+  if (P.downed || P.dead) return;
+  for (const it of (gameMode === 'survival' ? surv.interactables() : story.I)) {
     if (!it.when()) continue; const a = it.at(); if (!a) continue;
     const dx = a.x - P.x, dz = a.z - P.z, d = Math.hypot(dx, dz); if (d > 2.4) continue;
     const look = (dx * P.lookDir.x + dz * P.lookDir.z) / (d || 1);
@@ -699,10 +767,10 @@ function focusCheck() {
   }
 }
 function pause(on) {
-  if (on) { mode = 'paused'; only('pause'); input.unlock(); voice.pause(); setHud(false); A.spin(0); }
+  if (on) { mode = 'paused'; only('pause'); $('pauseCoop').hidden = !surv.online(); $('btnNotes').hidden = gameMode === 'survival'; $('pauseSave').hidden = gameMode === 'survival'; input.unlock(); voice.pause(); setHud(false); A.spin(0); }
   else { mode = 'play'; only(null); input.lock(); voice.resume(); setHud(true); }
 }
-function toTitle() { resetWorld(); mode = 'title'; only('title'); refreshTitle(); setHud(false); input.unlock(); A.spin(0); }
+function toTitle() { if (surv.active() || surv.net) surv.leave(false); gameMode = 'story'; zombies.S.puppet = false; P.downed = P.dead = false; resetWorld(); mode = 'title'; only('title'); refreshTitle(); setHud(false); input.unlock(); A.spin(0); }
 
 // ---------- menus ----------
 canvas.addEventListener('click', () => { if (mode === 'play') input.lock(); });
@@ -739,6 +807,7 @@ function notesList() {
   $('notesCount').textContent = `Found ${ids.length} of ${Object.keys(NOTES).length} · ever: ${Object.keys(progress.notes).length}`;
 }
 function refreshTitle() {
+  $('survBest').textContent = progress.survBest ? `Survival best: ${progress.survBest} night${progress.survBest === 1 ? '' : 's'}` : '';
   $('btnContinue').hidden = !(save && save.step >= 0 && save.pos);
   $('btnNew').textContent = 'New game';
   const e = Object.keys(progress.endings).map((k) => ENDINGS[k].title);
@@ -770,10 +839,58 @@ bindSetting('sHit', 'hitmarks');
 bindSetting('sInvert', 'invert');
 bindSetting('sPads', 'pads', null, (v) => { input.pads = v; });
 bindSetting('sRumble', 'rumble', null, (v) => { input.rumbleOn = v; });
+bindSetting('sAssist', 'assist');
+bindSetting('sAuto', 'autofire');
+$('btnSurvival').onclick = () => { A.initAudio(); surv.openLobby(); };
+$('btnOverAgain').onclick = () => { if (!surv.net || surv.isHost()) surv.startGame(); };
+$('btnOverTitle').onclick = () => toTitle();
+$('btnPauseMute').onclick = () => { const m = !surv.mic.muted; surv.setMute(m); $('btnPauseMute').textContent = m ? 'Microphone: muted' : 'Microphone: on'; };
 input.onKind = (m) => { document.body.dataset.input = m; $('touch').classList.toggle('on', m === 'touch' && mode === 'play'); };
 if (COARSE) input.setMode('touch');
 input.bindTouch($('touch'));
 document.body.dataset.input = input.padMode ? 'pad' : input.touchMode ? 'touch' : 'keys';
+
+// ---------- survival (and co-op) ----------
+const surv = createSurvival({
+  scene, camera, P, zombies, weapons, ui, input, progress, persist: () => { store(PKEY, progress); syncSave(); },
+  getHour: () => hour, setHour: (h) => { hour = h; }, pickups,
+  addPickup: (kind, x, z, y, temp, id) => addPickup(kind, x, z, y, temp, id), removePickup, applyPickup,
+  hurt: (d, k, from) => hurt(d, k, from), only, keyName,
+  toTitle: () => toTitle(),
+  resume: () => { mode = 'play'; setHud(true); input.lock(); },
+  begin: (m) => beginSurvival(m),
+  respawn: (x, z) => { P.dead = false; P.downed = false; P.alive = true; P.hp = 100; P.bleed = 0; P.x = x; P.z = z; P.y = groundY(x, z); collide(P, 0.35); if (!weapons.S.owned.pistol) weapons.give('pistol'); weapons.addAmmo('pistol', 24); },
+  end: (st) => showOver(st),
+});
+function beginSurvival(m) {
+  gameMode = 'survival';
+  resetWorld();
+  story.S.step = 0; story.S.flags = {}; story.S.notes = {}; story.S.talked = {};
+  save = null;
+  setDoor('armory', true);
+  weapons.restore({ owned: { pistol: false, smg: false, rifle: false, sniper: false, minigun: false }, mag: {}, reserve: {}, cur: null });
+  for (const k of ORDER) { weapons.S.mag[k] = 0; weapons.S.reserve[k] = 0; }
+  weapons.give('pistol'); weapons.addAmmo('pistol', 36);
+  P.medkits = 1; P.hp = 100; P.alive = true; P.downed = false; P.dead = false; P.bleed = 0; P.vy = 0; P.stam = 1; P.shotN = 0;
+  P.x = m.x; P.z = m.z; P.y = groundY(m.x, m.z); P.yaw = 0; P.pitch = 0; collide(P, 0.35);
+  hour = m.hour; kills = 0;
+  for (const p of [...pickups]) scene.remove(p.m); pickups.length = 0;
+  for (const [id, kind, x, z] of m.loot) addPickup(kind, x, z, null, false, id);
+  zombies.S.quiet = false;
+  mode = 'play'; only(null); setHud(true); input.lock(); A.initAudio();
+  U.black.value = 1; fear = 0; U.red.value = 0;
+  ui.objective(true);
+}
+function showOver(st) {
+  mode = 'over'; setHud(false); input.unlock(); A.spin(0);
+  const ids = Object.keys(st.names || {});
+  $('overNights').textContent = `${st.nights} night${st.nights === 1 ? '' : 's'}`;
+  $('overRows').innerHTML = ids.map((id) => `<p><b>${String(st.names[id]).replace(/[<>&]/g, '')}</b> · ${st.kills?.[id] || 0} put down</p>`).join('');
+  $('overBest').textContent = progress.survBest ? `Your best: ${progress.survBest} night${progress.survBest === 1 ? '' : 's'}` : '';
+  $('btnOverAgain').hidden = !!surv.net && !surv.isHost();
+  $('overWait').hidden = !(surv.net && !surv.isHost());
+  only('over');
+}
 
 // ---------- sync + achievements ----------
 function syncSave() { try { window.GameSync?.syncNow?.(); } catch { /* fine */ } }
@@ -790,6 +907,9 @@ if (window.GameSync) {
     { id: 'mass', name: 'Excision', desc: 'Destroy the Mass', test: (gg) => !!pr(gg).boss },
     { id: 'remission', name: 'Remission', desc: 'Give the cure away', test: (gg) => en(gg, 'remission') },
     { id: 'relapse', name: 'Relapse', desc: 'Keep the cure', test: (gg) => en(gg, 'relapse') },
+    { id: 'night1', name: 'First light', desc: 'Survival: live through a night', test: (gg) => (pr(gg).survBest || 0) >= 1 },
+    { id: 'night5', name: 'Five nights', desc: 'Survival: live through five nights', test: (gg) => (pr(gg).survBest || 0) >= 5 },
+    { id: 'coop', name: 'Not alone', desc: 'Play survival with a friend', test: (gg) => !!pr(gg).coop },
   ] });
   $('syncBtn').onclick = () => GameSync.open();
 } else $('syncBtn').hidden = true;
@@ -806,7 +926,8 @@ requestAnimationFrame(frame);
 setInterval(() => { if (mode === 'title' || mode === 'warn' || mode === 'card') { const t = performance.now() / 1000 * 0.03; camera.position.set(Math.sin(t) * 60, 34, 140 + Math.cos(t) * 20); camera.lookAt(0, 8, 20); U.black.value = Math.max(0.25, U.black.value - 0.02); } }, 33);
 
 if (TEST) window.__s = {
-  P, W, story, camera, U, renderer, scene, progress, settings, zombies, weapons, gore, g,
+  P, W, story, camera, U, renderer, scene, progress, settings, zombies, weapons, gore, g, surv, get gameMode() { return gameMode; },
+  suse(id) { const it = surv.interactables().find((i) => i.id.startsWith(id)); if (it) { it.use(); return true; } return false; },
   get save() { return save; }, get mode() { return mode; }, set mode(v) { mode = v; }, get boss() { return boss; }, get hour() { return hour; }, set hour(v) { hour = v; },
   get focus() { return focus ? (typeof focus.label === 'function' ? focus.label() : focus.label) : null; }, get talking() { return !!talkQ; }, skipTalk() { while (talkQ) { talkQ.t = 0; nextLine(); } },
   newGame, startFrom, endIntro, ending, setQuality(q) { settings.quality = q; applyQuality(); }, setGore(v) { settings.gore = v; applyGore(); },

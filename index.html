@@ -158,13 +158,42 @@ h2 { font: 400 46px var(--f-big); letter-spacing: .12em; margin: 0 0 6px; color:
 #tStick { position: absolute; width: 110px; height: 110px; margin: -55px 0 0 -55px; border-radius: 50%; border: 1px solid rgba(255, 255, 255, .15); display: none; }
 #tStick.on { display: block; }
 #tKnob { position: absolute; left: 35px; top: 35px; width: 40px; height: 40px; border-radius: 50%; background: rgba(255, 255, 255, .15); }
-.tb { position: absolute; width: 60px; height: 60px; border-radius: 50%; border: 1px solid rgba(226, 228, 220, .3); background: rgba(0, 0, 0, .3); color: var(--ink); font: 10px var(--f-type); display: grid; place-items: center; }
+.tb { position: absolute; width: 68px; height: 68px; border-radius: 50%; border: 1px solid rgba(226, 228, 220, .3); background: rgba(0, 0, 0, .3); color: var(--ink); font: 10px var(--f-type); display: grid; place-items: center; }
 .tb.on { background: rgba(168, 224, 90, .35); }
-.tb.fire { width: 86px; height: 86px; font-size: 13px; border-color: rgba(200, 22, 12, .6); }
+.tb.fire { width: 104px; height: 104px; font-size: 14px; border-color: rgba(200, 22, 12, .6); }
 body[data-input="touch"] #br { right: auto; left: 50%; transform: translateX(-50%); bottom: 6px; text-align: center; }
 body[data-input="touch"] #br #ammo { font-size: 30px; }
 body[data-input="touch"] #slots { justify-content: center; }
 body[data-input="touch"] #bl { width: 150px; }
+/* survival: the lobby, the team, game over */
+.mpBox { display: grid; gap: 10px; width: min(400px, 100%); margin: 0 auto; }
+.mpBox input[type=text] { font: 18px var(--f-type); background: #0c0e0c; color: var(--ink); border: 1px solid var(--line); padding: 10px; text-align: center; width: 100%; }
+#mpCode { text-transform: uppercase; letter-spacing: .3em; width: 150px !important; }
+#mpCodeShow { font: 400 54px var(--f-big); letter-spacing: .3em; color: var(--acc); }
+#mpRoster { list-style: none; padding: 0; margin: 4px 0; text-align: left; font: 18px var(--f-head); }
+#mpRoster li { padding: 8px 4px; border-bottom: 1px solid var(--line); display: flex; gap: 8px; }
+#mpRoster li span { margin-left: auto; font: 13px var(--f-type); color: var(--dim); }
+#mpRoster li.talk span::after { content: ' ◖ talking'; color: var(--acc); }
+.mpBox select { font: 15px var(--f-type); background: #111; color: var(--ink); border: 1px solid var(--line); padding: 4px 8px; }
+.mpBox label { display: flex; gap: 8px; align-items: center; justify-content: center; font-size: 15px; color: var(--dim); }
+#mpStatus { min-height: 1.4em; color: #ffb0a0; }
+#team { position: absolute; right: 20px; top: 54px; width: 210px; font: 14px var(--f-type); text-shadow: 0 1px 3px #000; }
+#team .tn { font: 400 24px var(--f-big); letter-spacing: .12em; color: #ffd040; text-align: right; margin-bottom: 4px; }
+#team .tm { display: grid; grid-template-columns: 1fr 60px 40px; gap: 6px; align-items: center; margin: 3px 0; color: #d8dcd0; }
+#team .tm span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+#team .tm i { height: 5px; background: rgba(255, 255, 255, .15); } #team .tm i b { display: block; height: 100%; background: var(--acc); }
+#team .tm em { font-style: normal; text-align: right; color: var(--dim); }
+#team .tm.dn { color: #ff7a6a; animation: pulse .8s infinite; } #team .tm.dn em { color: #ff7a6a; }
+#team .tm.dead { opacity: .45; }
+#over { background: radial-gradient(ellipse, #140404, #000 70%); }
+#overNights { font: 400 clamp(60px, 12vw, 120px)/1 var(--f-big); letter-spacing: .1em; color: #f0f2ea; }
+#overRows p { margin: 4px 0; font-size: 18px; }
+#prompt i { display: block; width: 160px; height: 4px; margin: 6px auto 0; background: linear-gradient(90deg, var(--acc) calc(var(--p) * 100%), rgba(255, 255, 255, .15) 0); }
+body[data-input="touch"] #prompt { left: 28%; right: 28%; }
+body[data-input="touch"] #prompt:not(:empty) { pointer-events: auto; padding: 10px 0; }
+body[data-input="touch"] #prompt:not(:empty) { background: linear-gradient(90deg, transparent, rgba(0, 0, 0, .45), transparent); }
+.tb.ready { background: rgba(168, 224, 90, .45); border-color: var(--acc); animation: pulse 1s infinite; }
+body[data-input="touch"] #team { top: 76px; right: 8px; width: 170px; font-size: 12px; }
 body:not([data-input="touch"]) .only-touch, body:not([data-input="pad"]) .only-pad, body:not([data-input="keys"]) .only-keys { display: none; }
 @media (max-width: 700px) { #obj { left: 14px; top: 46px; max-width: 70vw } #objMain { font-size: 22px } #sub { font-size: 17px; bottom: 30% } #bl { left: 14px; bottom: 14px; width: 150px } #ammo { font-size: 38px } }
 </style>
@@ -188,6 +217,7 @@ body:not([data-input="touch"]) .only-touch, body:not([data-input="pad"]) .only-p
   <div id="hint"></div>
   <div id="chapter"></div>
   <div id="obj"><div id="objMain"></div><div id="objSub"></div></div>
+  <div id="team" hidden></div>
   <div id="bl"><div id="hpBar"><div id="hpFill"></div></div><div id="blRow"><span id="meds"></span><span id="saved">saved</span><span id="clock"></span></div></div>
   <div id="br"><div id="ammo"></div><div id="gunName"></div><div id="slots"></div></div>
 </div>
@@ -203,13 +233,13 @@ body:not([data-input="touch"]) .only-touch, body:not([data-input="pad"]) .only-p
 <div id="touch">
   <div id="tZone"></div>
   <div id="tStick"><div id="tKnob"></div></div>
-  <div class="tb fire" data-t="fire" style="right:30px;bottom:110px">FIRE</div>
-  <div class="tb" data-t="aim" style="right:128px;bottom:150px">AIM</div>
-  <div class="tb" data-t="reload" style="right:130px;bottom:70px">RELOAD</div>
-  <div class="tb" data-t="jump" style="right:30px;bottom:24px;width:52px;height:52px">JUMP</div>
-  <div class="tb" data-t="use" style="right:200px;bottom:30px">USE</div>
-  <div class="tb" data-t="knife" style="right:200px;bottom:110px">KNIFE</div>
-  <div class="tb" data-t="swap" style="right:130px;bottom:230px">SWAP</div>
+  <div class="tb fire" data-t="fire" style="right:26px;bottom:96px">FIRE</div>
+  <div class="tb" data-t="aim" style="right:140px;bottom:150px">AIM</div>
+  <div class="tb" data-t="reload" style="right:140px;bottom:66px">RELOAD</div>
+  <div class="tb" data-t="jump" style="right:36px;bottom:16px;width:56px;height:56px">JUMP</div>
+  <div class="tb" data-t="use" style="right:226px;bottom:26px">USE</div>
+  <div class="tb" data-t="knife" style="right:226px;bottom:110px">KNIFE</div>
+  <div class="tb" data-t="swap" style="right:46px;bottom:212px;width:58px;height:58px">SWAP</div>
   <div class="tb" data-t="run" style="left:24px;bottom:150px;width:52px;height:52px">RUN</div>
   <div class="tb" data-t="light" style="right:150px;top:20px;width:48px;height:48px">LIGHT</div>
   <div class="tb" data-t="heal" style="right:206px;top:20px;width:48px;height:48px">MED</div>
@@ -237,6 +267,7 @@ body:not([data-input="touch"]) .only-touch, body:not([data-input="pad"]) .only-p
     <div class="menu">
       <button id="btnContinue" hidden>Continue</button>
       <button id="btnNew">New game</button>
+      <button id="btnSurvival">Survival · co-op</button>
       <button id="btnHow">How to play</button>
       <button id="btnSettings">Settings</button>
       <button id="syncBtn" title="Keep your progress on all your devices">Sync</button>
@@ -244,6 +275,7 @@ body:not([data-input="touch"]) .only-touch, body:not([data-input="pad"]) .only-p
       <button id="pcDownload" title="The Game Library app for Windows: every game in one place">Download for PC</button>
     </div>
     <p class="small" id="titleProg"></p>
+    <p class="small" id="survBest"></p>
     <p class="small only-keys">Mouse and keyboard · controllers work too · headphones</p>
     <p class="small only-pad">Controller connected</p>
     <p class="small only-touch">Touch controls · play it sideways · headphones</p>
@@ -295,6 +327,8 @@ body:not([data-input="touch"]) .only-touch, body:not([data-input="pad"]) .only-p
       <label class="chk"><input type="checkbox" id="sVoices"> Spoken voices (text to speech)</label>
       <label class="chk"><input type="checkbox" id="sSubs"> Subtitles</label>
       <label class="chk"><input type="checkbox" id="sHit"> Hit markers</label>
+      <label class="chk"><input type="checkbox" id="sAssist"> Aim assist (controllers and touch)</label>
+      <label class="chk"><input type="checkbox" id="sAuto"> Auto-fire on touch screens</label>
       <label class="chk"><input type="checkbox" id="sInvert"> Invert look up / down</label>
       <label class="chk"><input type="checkbox" id="sPads"> Controllers ON</label>
       <label class="chk"><input type="checkbox" id="sRumble"> Controller rumble</label>
@@ -309,10 +343,11 @@ body:not([data-input="touch"]) .only-touch, body:not([data-input="pad"]) .only-p
     <div class="menu">
       <button id="btnResume">Resume</button>
       <button id="btnNotes">Notes and tapes</button>
+      <div id="pauseCoop" hidden><button id="btnPauseMute">Microphone: on</button><p class="small">Playing together: the game keeps going while this menu is open.</p></div>
       <button id="btnPauseSettings">Settings</button>
       <button id="btnQuit">Quit to title</button>
     </div>
-    <p class="small">The game saves at every checkpoint.</p>
+    <p class="small" id="pauseSave">The game saves at every checkpoint.</p>
   </div>
 </div>
 
@@ -348,6 +383,44 @@ body:not([data-input="touch"]) .only-touch, body:not([data-input="pad"]) .only-p
   </div>
 </div>
 
+<div id="mp" class="screen" hidden>
+  <div class="card">
+    <h2>Survival</h2>
+    <p class="tag">No story. The whole city, up to four of you, as many nights as you can last.<br>Scavenge by day. At 8 PM the waves come, and every night they're worse.</p>
+    <div class="mpBox" id="mpOut">
+      <input type="text" id="mpName" maxlength="16" placeholder="Your name" autocomplete="off" spellcheck="false">
+      <button class="big" id="mpSolo">Play alone</button>
+      <button class="big" id="mpHost">Host a room for friends</button>
+      <div class="row"><input type="text" id="mpCode" maxlength="4" placeholder="CODE" autocomplete="off" spellcheck="false"><button id="mpJoin">Join</button></div>
+      <label><input type="checkbox" id="mpMic"> Use my microphone (proximity voice)</label>
+      <button id="mpBack">Back</button>
+    </div>
+    <div class="mpBox" id="mpIn" hidden>
+      <div class="small">Room code</div>
+      <div id="mpCodeShow"></div>
+      <div class="row"><button id="mpCopy">Copy invite link</button></div>
+      <ul id="mpRoster"></ul>
+      <label>Friends' voices <select id="mpVoiceMode"><option value="clear">Clear (best quality)</option><option value="3d">From where they are (3D)</option></select></label>
+      <button class="big" id="mpStart">Start</button>
+      <p class="small" id="mpWait" hidden>Waiting for the host to start.</p>
+      <button id="mpLeave">Leave the room</button>
+    </div>
+    <p class="small" id="mpStatus"></p>
+    <p class="small">Phones and PCs can play together. Friends' voices are loud when they're close and fade with distance. The dead can hear you talking.</p>
+  </div>
+</div>
+
+<div id="over" class="screen" hidden>
+  <div class="card">
+    <h2>The city keeps you</h2>
+    <div class="small">You lasted</div>
+    <div id="overNights"></div>
+    <div id="overRows"></div>
+    <p class="small" id="overBest"></p>
+    <div class="menu"><button id="btnOverAgain">Again</button><p class="small" id="overWait" hidden>Waiting for the host.</p><button id="btnOverTitle">Title</button></div>
+  </div>
+</div>
+
 <div id="dead" class="screen" hidden>
   <div class="card">
     <div id="deadTitle"></div>
@@ -366,6 +439,7 @@ body:not([data-input="touch"]) .only-touch, body:not([data-input="pad"]) .only-p
   </div>
 </div>
 
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
 <script src="sync.js"></script>
 <script type="module" src="js/main.js"></script>
 <script src="install.js"></script>

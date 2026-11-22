@@ -76,6 +76,15 @@ const ready = async (g) => { for (let i = 0; i < 100; i++) { if (await ev(`retur
   await tapEl('[data-t=fire]'); await sleep(400);
   check((await ev('return __s.weapons.S.mag.pistol')) < m0, 'touch FIRE fires');
   await shot('phone');
+  // aim assist + auto-fire: a zombie just off the sights gets pulled in and shot without touching FIRE
+  await ev(`__s.tp(0, 21, 0, 0); __s.zombies.S.quiet = true; for (const z of [...__s.zombies.list]) __s.zombies.removeBody(z); __s.weapons.S.mag.pistol = 12;
+    const zb = __s.zombies.spawn('walker', 0.5, 13, { state: 'idle', heading: 0, speedMul: 0.001, scripted: true }); window.__a = zb; __s.P.yaw = 0.04; __s.P.pitch = 0.0;`);
+  for (let i = 0; i < 40 && (await ev('return __s.weapons.S.mag.pistol')) >= 12; i++) await sleep(250);
+  check((await ev('return __s.weapons.S.mag.pistol')) < 12, 'auto-fire shoots on its own (touch)');
+  await shot('phone-autofire');
+  // survival lobby on a phone
+  await ev(`__s.mode = 'title'; document.getElementById('btnSurvival').click()`); await sleep(400);
+  await shot('phone-lobby');
   srv.kill();
   await done();
 }

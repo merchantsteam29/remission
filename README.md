@@ -16,6 +16,19 @@ An open-world, first-person zombie horror shooter for the browser. Nothing to in
 - **A gore slider, 0 to 100:** Off (no blood at all, the dead just fall), Low, Medium (limbs come off, heads come off), High (heads burst, pieces, blood on your screen), Extreme (as much as it can, bodies stay in the street). Set on the first screen and in Settings.
 - Checkpoints, mouse and keyboard, controllers (Xbox, PlayStation, Steam Deck / Steam Controller), touch screens, progress sync and achievements, installable as an app.
 
+## Survival and co-op
+
+Survival (title screen) is the city with no story: scavenge by day, and from 8 PM hold out against waves that grow every night. Play alone, or host a room and give up to three friends the 4-letter code (or the invite link). Phones and PCs play together.
+
+- The host's browser runs the zombies, the clock and the supplies, and sends them out 10 times a second (PeerJS, peer to peer, through the host). Everyone else sends where they are and what they hit.
+- Proximity voice chat (WebRTC): loud up close, gone across the city. Talking is noise the dead can hear.
+- Down at 0 health: 30 seconds for a friend to hold E on you. Bleed out and you spectate until dawn. Everyone down: game over.
+- Gun caches: SMG in the precinct armory, rifle in the checkpoint tent, sniper in Gus's safe, minigun at the helicopter. Ammo there restocks each day.
+
+## Phones
+
+Phones get lighter graphics and fewer zombies automatically, big touch buttons, aim assist and auto-fire (both in Settings), and tapping the prompt uses things.
+
 ## Controls
 
 | | Keyboard / mouse | Controller |
@@ -38,6 +51,7 @@ An open-world, first-person zombie horror shooter for the browser. Nothing to in
 - `js/weapons.js` the five guns: models, firing, recoil, reloads, tracers
 - `js/boss.js` the Mass
 - `js/story.js` chapters, objectives, conversations, notes, triggers, scares, endings
+- `js/survival.js` survival mode and co-op (`js/net.js` rooms, `js/vc.js` voice)
 - `js/main.js` the loop: player, day/night, lights, HUD, map, saves, menus
 - `js/gore.js`, `js/tex.js`, `js/audio.js` (all sound is synthesised), `js/input.js`, `js/voice.js`
 
@@ -48,7 +62,8 @@ node serve.js              # http://localhost:8080
 node tools/smoke.mjs       # boot + look around the city
 node tools/play.mjs        # the whole story, every gun, the boss, an ending, a death
 node tools/fight.mjs       # a horde at gore 100, day and night
-node tools/ui.mjs          # menus, gore slider, controllers, scope, map, phone layout
+node tools/ui.mjs          # menus, gore slider, controllers, scope, map, phone layout, auto-fire
+node tools/coop.mjs        # survival alone, then a PC host + a phone joining over the internet
 node tools/icons.mjs       # icons and cover.png
 ```
 

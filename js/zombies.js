@@ -110,10 +110,12 @@ const KIND = {
 
 // ---------- the flow field ----------
 const FW = 176, FH = FW / 2; // cells across (88 m)
-const dist = new Int16Array(FW * FW), queue = new Int32Array(FW * FW);
-let fi0 = 0, fj0 = 0, flowReady = false;
-function buildFlow(px, pz) {
-  const pi = cellOf(px), pj = cellOf(pz); fi0 = pi - FH; fj0 = pj - FH;
+const queue = new Int32Array(FW * FW);
+// one field per player (everyone in a co-op game is hunted)
+const makeField = () => ({ dist: new Int16Array(FW * FW), fi0: 0, fj0: 0, ready: false });
+function buildFlow(F, px, pz) {
+  const pi = cellOf(px), pj = cellOf(pz); F.fi0 = pi - FH; F.fj0 = pj - FH;
+  const dist = F.dist, fi0 = F.fi0, fj0 = F.fj0;
   dist.fill(-1); let qh = 0, qt = 0;
   const start = FH * FW + FH; dist[start] = 0; queue[qt++] = start;
   const nb = [[1, 0, 10], [-1, 0, 10], [0, 1, 10], [0, -1, 10]];
@@ -126,12 +128,13 @@ function buildFlow(px, pz) {
       dist[n] = d + 1; queue[qt++] = n;
     }
   }
-  flowReady = true;
+  F.ready = true;
 }
 const FD = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
 // which way to go from (x, z) to reach the player; null when outside the field or cut off
-function flowDir(x, z, out) {
-  if (!flowReady) return null;
+function flowDir(F, x, z, out) {
+  if (!F || !F.ready) return null;
+  const dist = F.dist, fi0 = F.fi0, fj0 = F.fj0;
   const li = cellOf(x) - fi0, lj = cellOf(z) - fj0;
   if (li < 1 || lj < 1 || li >= FW - 1 || lj >= FW - 1) return null;
   const here = dist[lj * FW + li]; if (here < 0 || here >= 30000) return null;
@@ -155,12 +158,16 @@ export function createZombies(scene, gore, opts) {
   const list = [], corpses = [];
   const noises = [];
   let flowT = 0, seedN = 1;
-  const S = { max: 30, killed: 0, spawnT: 0, density: 1, quiet: false };
+  const S = { max: 30, killed: 0, spawnT: 0, density: 1, quiet: false, puppet: false, nextNid: 1 };
+  const byNid = new Map(), fields = new Map();
+  let fieldI = 0;
+  const players = () => (opts.players ? opts.players() : [opts.player()]);
 
   function spawn(kind = 'walker', x, z, o = {}) {
     const K = KIND[kind] || KIND.walker;
-    const R = makeRig(kind, seedN++ * 37 + ((Math.random() * 100) | 0), o.outfit || null);
-    const sc = (K.scale || 1) * (o.scale || 1) * (0.94 + Math.random() * 0.12);
+    const seed = o.seed ?? (seedN++ * 37 + ((Math.random() * 100) | 0));
+    const R = makeRig(kind, seed, o.outfit || null);
+    const sc = o.exactScale || (K.scale || 1) * (o.scale || 1) * (0.94 + Math.random() * 0.12);
     R.root.scale.setScalar(sc);
     const y = groundY(x, z);
     R.root.position.set(x, y, z);
@@ -173,6 +180,7 @@ export function createZombies(scene, gore, opts) {
       percT: Math.random() * 0.3, deadT: 0, fall: 0, fallDir: 1, feeding: !!o.feeding, scale: sc, onDeath: o.onDeath || null, noDespawn: !!o.noDespawn,
       dmgPart: {}, outfit: o.outfit || null, wanderT: 0, stuck: 0, lastX: x, lastZ: z, spawnT: 0, sprint: o.sprint || 0, indoor: !!indoorAt(x, z),
     };
+    zb.seed = seed; zb.nid = o.nid ?? S.nextNid++; zb.puppet = !!o.puppet; zb.nx = x; zb.nz = z; zb.nh = zb.heading; byNid.set(zb.nid, zb);
     if (zb.crawl) setCrawl(zb, true);
     if (o.state === 'chase') zb.seen = 1;
     if (kind === 'child') { R.eyes.material = new THREE.MeshBasicMaterial({ color: 0xffffff }); }
@@ -207,6 +215,12 @@ export function createZombies(scene, gore, opts) {
   function damage(zb, part, dmg, dir, point, w = {}) {
     if (zb.state === 'dead') return false;
     const g = opts.gore();
+    if (S.puppet) { // a co-op client: the host decides; show the blood now
+      if (g > 0) gore.spray(point, _d.copy(dir).multiplyScalar(0.6).add(_q.set(0, 0.4, 0)), Math.round((8 + dmg * 0.4) * g), 2.5 + g * 2, 0.7);
+      A.impact(point, 'flesh');
+      opts.sendHit?.(zb.nid, part, dmg, dir, point, w);
+      return false;
+    }
     const mult = part === 'head' ? (w.head || 3) : part === 'torso' ? 1 : 0.65;
     const dd = dmg * mult;
     zb.hp -= dd; zb.dmgPart[part] = (zb.dmgPart[part] || 0) + dmg;
@@ -231,7 +245,7 @@ export function createZombies(scene, gore, opts) {
     if (zb.hp <= 0) { kill(zb, dir, part, w); return true; }
     // it felt that
     zb.stag = Math.min(0.5, (zb.stag || 0) + dd / (zb.kind === 'brute' ? 400 : 120));
-    if (zb.state !== 'chase') { zb.state = 'chase'; zb.seen = 1; zb.lastSeen = { x: opts.player().x, z: opts.player().z }; }
+    if (zb.state !== 'chase') { zb.state = 'chase'; zb.seen = 1; zb.lastSeen = w.from ? { x: w.from.x, z: w.from.z } : { x: zb.x, z: zb.z }; }
     return false;
   }
   function sever(zb, part, dir) {
@@ -246,7 +260,7 @@ export function createZombies(scene, gore, opts) {
     if (part === 'legL' || part === 'legR') setCrawl(zb, true);
   }
   function burstHead(zb, dir, explode) {
-    zb.lost.head = true;
+    zb.lost.head = true; zb.burst = !!explode;
     const head = zb.R.neck;
     head.updateMatrixWorld(true); head.getWorldPosition(_p);
     if (explode) {
@@ -277,7 +291,7 @@ export function createZombies(scene, gore, opts) {
     while (corpses.length > 22) removeBody(corpses.shift());
   }
   function removeBody(zb) {
-    scene.remove(zb.R.root);
+    scene.remove(zb.R.root); byNid.delete(zb.nid);
     const i = list.indexOf(zb); if (i >= 0) list.splice(i, 1);
     const k = corpses.indexOf(zb); if (k >= 0) corpses.splice(k, 1);
   }
@@ -299,20 +313,29 @@ export function createZombies(scene, gore, opts) {
   // ---------- each frame ----------
   const dirTmp = { x: 0, z: 0 };
   function update(dt, C) {
-    const P = opts.player();
-    flowT -= dt; if (flowT <= 0) { flowT = 0.3; buildFlow(P.x, P.z); }
+    if (S.puppet) return puppetUpdate(dt, C);
+    const PL = players(), me = PL[0], live = PL.filter((p) => p.alive && !p.downed);
+    // the paths: one field per player, rebuilt in turn
+    for (const id of [...fields.keys()]) if (!PL.some((p) => p.id === id)) fields.delete(id);
+    flowT -= dt; if (flowT <= 0) { flowT = 0.3 / Math.max(1, PL.length); const p = PL[fieldI++ % PL.length]; let F = fields.get(p.id); if (!F) fields.set(p.id, F = makeField()); buildFlow(F, p.x, p.z); }
     for (let i = noises.length - 1; i >= 0; i--) if ((noises[i].t -= dt) <= 0) noises.splice(i, 1);
-    if (!S.quiet) population(dt, C, P);
+    if (!S.quiet && live.length) population(dt, C, live[(Math.random() * live.length) | 0], live.length);
     for (let i = list.length - 1; i >= 0; i--) {
       const zb = list[i];
       if (zb.state === 'dead') { deadUpdate(zb, dt); continue; }
+      // who it's after: the nearest of you who can still fight (it keeps its target unless someone is much closer)
+      let P = null, best = 1e9, near = 1e9;
+      for (const p of PL) { const d = Math.hypot(p.x - zb.x, p.z - zb.z); near = Math.min(near, d); if (!p.alive || p.downed) continue; const dd = d * (p.id === zb.tgt ? 0.7 : 1); if (dd < best) { best = dd; P = p; } }
+      if (!P) P = me;
+      zb.tgt = P.id;
       const dx = P.x - zb.x, dz = P.z - zb.z, dist = Math.hypot(dx, dz);
-      // too far to matter
-      if (!zb.noDespawn && !zb.scripted && (dist > 130 || (dist > 85 && zb.state !== 'chase'))) { removeBody(zb); continue; }
-      zb.R.root.visible = dist < C.far;
+      // too far from all of you to matter
+      if (!zb.noDespawn && !zb.scripted && (near > 130 || (near > 85 && zb.state !== 'chase'))) { removeBody(zb); continue; }
+      const mine = Math.hypot(me.x - zb.x, me.z - zb.z);
+      zb.R.root.visible = mine < C.far;
       think(zb, dt, P, dist, dx, dz, C);
       move(zb, dt, P, dist, dx, dz);
-      animate(zb, dt, dist);
+      animate(zb, dt, mine);
       if (zb.bleed > 0 && opts.gore() > 0.2) { zb.bleed -= dt; if (Math.random() < dt * 10) { zb.R.spine.getWorldPosition(_p); _p.y += 0.6; gore.spray(_p, _q.set(0, 1, 0), 3, 1.5, 0.8); } }
     }
     // keep them apart
@@ -325,9 +348,9 @@ export function createZombies(scene, gore, opts) {
       }
     }
   }
-  function population(dt, C, P) {
-    S.spawnT -= dt; if (S.spawnT > 0) return; S.spawnT = 0.8;
-    const night = C.night, target = Math.round((C.max ?? S.max) * S.density * (0.65 + night * 0.55) * (C.indoors ? 0.5 : 1));
+  function population(dt, C, P, nPl = 1) {
+    S.spawnT -= dt; if (S.spawnT > 0) return; S.spawnT = 0.8 / nPl;
+    const night = C.night, target = Math.round((C.max ?? S.max) * S.density * (0.65 + night * 0.55) * (C.indoors ? 0.5 : 1) * (1 + 0.6 * (nPl - 1)));
     let alive = 0; for (const z of list) if (z.state !== 'dead' && !z.scripted) alive++;
     if (alive >= target) return;
     // somewhere out of sight, on the street, 28-55 m off
@@ -351,7 +374,7 @@ export function createZombies(scene, gore, opts) {
       zb.percT = 0.2 + Math.random() * 0.1;
       const range = (C.night > 0.5 ? (P.lit ? 30 : 15) : 34) * zb.K.sight * (C.indoors && !zb.indoor ? 0.3 : 1) * (zb.feeding ? 0.5 : 1);
       const fwd = (Math.sin(zb.heading) * dx + Math.cos(zb.heading) * dz) / (dist || 1);
-      if (dist < range && (fwd > -0.2 || dist < 4) && P.alive && clearLine(zb.x, 1.6, zb.z, P.x, 1.5, P.z)) {
+      if (dist < range && (fwd > -0.2 || dist < 4) && P.alive && !P.downed && clearLine(zb.x, 1.6, zb.z, P.x, 1.5, P.z)) {
         if (zb.state !== 'chase' && zb.state !== 'attack') { zb.feeding = false; if (zb.kind === 'runner') A.shriek(zb.R.root.position); else A.groan(zb.R.root.position, zb.vary, 0.5, 0, 0.8); opts.onSpot?.(zb); }
         zb.state = zb.state === 'attack' ? 'attack' : 'chase'; zb.seen = 1; zb.lastSeen = { x: P.x, z: P.z };
       } else if (zb.state === 'chase') {
@@ -365,7 +388,7 @@ export function createZombies(scene, gore, opts) {
       zb.atk += dt;
       if (zb.atk > 0.45 && !zb.struck) {
         zb.struck = true;
-        if (dist < (zb.K.reach + 0.45) * zb.scale && P.alive) opts.onAttack?.(zb, zb.K.dmg);
+        if (dist < (zb.K.reach + 0.45) * zb.scale && P.alive && !P.downed) opts.onAttack?.(zb, zb.K.dmg, P);
         else A.snarl(zb.R.root.position, zb.vary, 0.3);
       }
       if (zb.atk > 0.9) { zb.state = 'chase'; zb.atkCd = 0.5 + Math.random() * 0.4; zb.struck = false; }
@@ -381,7 +404,7 @@ export function createZombies(scene, gore, opts) {
     let mx = 0, mz = 0, sp = 0;
     if (zb.state === 'chase' || zb.state === 'attack') {
       const close = dist < 2.5 && clearLine(zb.x, 1.0, zb.z, P.x, 1.0, P.z);
-      const f = close ? null : flowDir(zb.x, zb.z, dirTmp);
+      const f = close ? null : flowDir(fields.get(P.id), zb.x, zb.z, dirTmp);
       if (f) { mx = f.x; mz = f.z; } else { mx = dx / (dist || 1); mz = dz / (dist || 1); }
       sp = zb.state === 'attack' ? 0.15 : zb.speed * (zb.sprint ? 1.25 : 1);
       if (dist < 0.9) sp = 0;
@@ -485,8 +508,68 @@ export function createZombies(scene, gore, opts) {
     return zb;
   }
   function clear() { for (const zb of [...list]) removeBody(zb); corpses.length = 0; }
+
+  // ---------- co-op: the host sends what they're doing; everyone else draws puppets ----------
+  const KINDS = ['walker', 'runner', 'brute', 'crawler', 'child'], OUTF = [null, 'patient', 'doctor', 'cop', 'soldier', 'guard', 'mara', 'noah', 'kaur', 'gus'], STATES = ['idle', 'wander', 'alert', 'chase', 'attack', 'dead'];
+  const PARTS = ['armL', 'armR', 'legL', 'legR', 'head'];
+  const NF = 12;
+  function snapshot(near) {
+    const out = [];
+    for (const zb of list) {
+      if (zb.kind === 'child' || zb.decor || zb.puppet) continue;
+      if (near && !near(zb)) continue;
+      let lb = 0; PARTS.forEach((p, i) => { if (zb.lost[p]) lb |= 1 << i; }); if (zb.burst) lb |= 32;
+      out.push(zb.nid, KINDS.indexOf(zb.kind), zb.seed, Math.max(0, OUTF.indexOf(zb.outfit)), Math.round(zb.x * 20), Math.round(zb.z * 20), Math.round(zb.heading * 100),
+        STATES.indexOf(zb.state), (zb.fallDir > 0 ? 1 : 0) | (zb.feeding ? 2 : 0) | (zb.crawl ? 4 : 0), lb, Math.round((zb.atk || 0) * 100), Math.round(zb.scale * 100));
+    }
+    return out;
+  }
+  function applySnapshot(arr) {
+    const seen = new Set(), g = opts.gore();
+    for (let i = 0; i + NF <= arr.length; i += NF) {
+      const nid = arr[i]; seen.add(nid);
+      const x = arr[i + 4] / 20, z = arr[i + 5] / 20, h = arr[i + 6] / 100, st = STATES[arr[i + 7]] || 'idle', fl = arr[i + 8], lb = arr[i + 9];
+      let zb = byNid.get(nid);
+      if (!zb) {
+        if (st === 'dead') continue; // died before we saw it
+        zb = spawn(KINDS[arr[i + 1]] || 'walker', x, z, { seed: arr[i + 2], outfit: OUTF[arr[i + 3]], nid, heading: h, exactScale: arr[i + 11] / 100, puppet: true });
+      }
+      zb.nx = x; zb.nz = z; zb.nh = h; zb.atk = arr[i + 10] / 100; zb.feeding = !!(fl & 2);
+      if ((fl & 4) && !zb.crawl) setCrawl(zb, true);
+      const dir = new THREE.Vector3(Math.sin(h + Math.PI), 0, Math.cos(h + Math.PI));
+      if (g >= 0.35) PARTS.forEach((p, k) => { if ((lb & (1 << k)) && !zb.lost[p]) { if (p === 'head') burstHead(zb, dir, !!(lb & 32) && g >= 0.7); else sever(zb, p, dir); } });
+      if (st === 'dead' && zb.state !== 'dead') {
+        zb.state = 'dead'; zb.deadT = 0; zb.fall = 0; zb.fallDir = fl & 1 ? 1 : -1; zb.x = x; zb.z = z;
+        A.bodyfall(zb.R.root.position); if (g > 0.3) gore.pool(_p.set(x, groundY(x, z) + 0.005, z), 0.7 + g * 0.9, 0.3);
+        corpses.push(zb); while (corpses.length > 26) removeBody(corpses.shift());
+      } else if (st !== 'dead') zb.state = st;
+    }
+    for (const zb of [...list]) if (zb.puppet && !seen.has(zb.nid) && zb.state !== 'dead') removeBody(zb);
+  }
+  function puppetUpdate(dt, C) {
+    const me = players()[0];
+    for (let i = list.length - 1; i >= 0; i--) {
+      const zb = list[i];
+      if (zb.state === 'dead') { deadUpdate(zb, dt); continue; }
+      const mine = Math.hypot(me.x - zb.x, me.z - zb.z);
+      if (zb.puppet) {
+        const k = Math.min(1, dt * 10), ox = zb.x, oz = zb.z;
+        zb.x += (zb.nx - zb.x) * k; zb.z += (zb.nz - zb.z) * k;
+        if (Math.hypot(zb.nx - zb.x, zb.nz - zb.z) > 6) { zb.x = zb.nx; zb.z = zb.nz; }
+        let dh = zb.nh - zb.heading; dh = Math.atan2(Math.sin(dh), Math.cos(dh)); zb.heading += dh * k;
+        zb.moving = Math.hypot(zb.x - ox, zb.z - oz) / Math.max(dt, 1e-3);
+        zb.y += (groundY(zb.x, zb.z) - zb.y) * Math.min(1, dt * 12); zb.t += dt;
+        if ((zb.voiceT -= dt) <= 0) { zb.voiceT = (zb.state === 'chase' ? 1.5 : 4) + Math.random() * 5; if (mine < 40) A.groan(zb.R.root.position, zb.vary, zb.state === 'chase' ? 0.42 : 0.28, 0, zb.kind === 'brute' ? 1.8 : 1.2); }
+      }
+      zb.R.root.visible = mine < C.far;
+      animate(zb, dt, mine);
+      if (zb.bleed > 0 && opts.gore() > 0.2) { zb.bleed -= dt; if (Math.random() < dt * 10) { zb.R.spine.getWorldPosition(_p); _p.y += 0.6; gore.spray(_p, _q.set(0, 1, 0), 3, 1.5, 0.8); } }
+    }
+  }
+  const getByNid = (n) => byNid.get(n);
+
   function setEyes(night) { MAT.eyes && MAT.eyes.color.setScalar(0.35 + night * 0.65); }
-  return { list, spawn, raycast, damage, melee, noise, update, clear, corpse, removeBody, setEyes, setCrawl, S, flowDir: (x, z) => flowDir(x, z, {}) };
+  return { list, spawn, raycast, damage, melee, noise, update, clear, corpse, removeBody, setEyes, setCrawl, S, snapshot, applySnapshot, getByNid };
 }
 
 // closest approach of a ray (o + t d, |d| = 1) to the capsule a-b of radius r: the t where it enters, or null
